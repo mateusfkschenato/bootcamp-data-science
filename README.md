@@ -5,6 +5,6 @@ Lucas Talamini (Estatística)
 Mateus Schenato (Ciência da Computação)  
 Teresa Bauer (Engenharia Elétrica)
 
-# Professor:
+## Professor:
 Fabrício Leal
 
