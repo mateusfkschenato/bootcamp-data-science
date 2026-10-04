@@ -6,5 +6,5 @@ Mateus Schenato (Ciência da Computação)
 Teresa Bauer (Engenharia Elétrica)
 
 ## Professor:
-Fabrício Leal
+Fabrício Leal (Fundo Amanhã | Diretor Executivo & Vice-presidente)
 
