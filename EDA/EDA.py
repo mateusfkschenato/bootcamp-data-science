@@ -1,7 +1,52 @@
 # =====================================================================
-# EDA SIMPLES - passo a passo (versão introdutória)
-# Cada bloco "# %%" é uma célula: no Jupyter ou VS Code você roda um por vez.
-# Coloque base.csv e VariavelResposta.csv na mesma pasta deste arquivo.
+# [NOTA DE ORGANIZAÇÃO — não faz parte do código original]
+# Este arquivo é a PARTE B (FORA DO PIPELINE) do script, agora separada
+# em um .py próprio. Antes, Parte A e Parte B viviam no mesmo arquivo e
+# a Parte B reaproveitava, em memória, o DataFrame "cestao" que a Parte
+# A deixava pronto. Com os arquivos separados isso não existe mais.
+#
+# >>> RODE O transforma_dataset.py (Parte A) ANTES DESTE ARQUIVO. <<<
+# Ele é quem gera base.csv (limpo) e dataset_modelagem.csv, que este
+# arquivo lê do disco.
+#
+# A Parte B está organizada pelos itens do checklist da EDA, nesta ordem:
+#   ITEM 1 - Entender os dados
+#   ITEM 2 - Qualidade dos dados
+#   ITEM 3 - Análise univariada
+#   ITEM 4 - Outliers
+#   ITEM 5 - Features criadas
+#   ITEM 6 - Análise bivariada
+#   ITEM 7 - Padrões temporais
+#   ITEM 8 - Dicionário de materiais
+#   ITEM 9 - Fechamento
+# Cada gráfico/célula foi reclassificado pra debaixo do item a que ele
+# realmente responde, não pela ordem histórica em que foi escrito. Como
+# a seção "GRÁFICOS 8 A 18" sempre foi UM script contínuo (sem #%% entre
+# os gráficos individuais), reordenar os gráficos dentro dela é só
+# reordenar linhas de um mesmo bloco - não quebra nenhuma célula do
+# Jupyter. A configuração comum desses gráficos (leitura de
+# base/resposta, funções mostrar/br/pct, cores, pasta "graficos/") teve
+# que ficar num único lugar (logo no início do ITEM 2, que é quem
+# primeiro precisa dela) porque é usada também pelos itens 3 e 6 - isso
+# está anotado onde acontece. Nenhum conteúdo foi cortado nesta
+# passada, só reclassificado; os cortes já feitos na versão anterior
+# (Gráficos 1, 2, 4, 5, 8, Passo 13, Passo 15) continuam fora.
+#
+# [AJUSTE P/ ARQUIVO SEPARADO] A única mudança de conteúdo nesta
+# separação está no início do ITEM 6 (Análise bivariada): em vez de
+# reaproveitar o "cestao" que a Parte A deixava em memória, agora se lê
+# o dataset_modelagem.csv que a Parte A já salva em disco - é a mesma
+# informação (cestao filtrado pros carregamentos 1 e 2, já com a coluna
+# carga_alta), só que lida do arquivo em vez de herdada do kernel.
+# =====================================================================
+#%%
+import os
+assert os.path.exists("dataset_modelagem.csv"), "Rode o transforma_dataset.py primeiro!"
+# =====================================================================
+# ITEM 1 — ENTENDER OS DADOS
+# Tamanho do dataset, período coberto, se as tabelas se ligam
+# corretamente pela corrida, peso/volume de cada cestão e quantos
+# passam da capacidade física.
 # =====================================================================
 
 #%%
@@ -21,13 +66,12 @@ print("resposta:", resposta.shape)
 base.head()                         # mostra as 5 primeiras linhas
 
 #%% PASSO 3
-base["Densidade t/m3"] = base["Densidade t/m3"].str.replace(",", ".").astype(float)
-base["Rendimento Metálico %"] = base["Rendimento Metálico %"].str.replace(",", ".").astype(float)
+for col in ["Densidade t/m3", "Rendimento Metálico %"]:
+    if not pd.api.types.is_numeric_dtype(base[col]):
+        base[col] = base[col].str.replace(",", ".").astype(float)
+
 base["dt_hora_consumo"] = pd.to_datetime(base["dt_hora_consumo"], utc=True, format="ISO8601")
 base["peso_t"] = base["qt_peso_carregamento"] / 1000
-# =====================================================================
-# PARTE 1 - ENTENDER OS DADOS
-# =====================================================================
 
 # %% PASSO 4 - Tamanho dos dados e período
 print("Número de corridas:", base["cd_corrida"].nunique())
@@ -59,14 +103,28 @@ total = total.reset_index()
 print(total.groupby("nu_carregamento").describe().T)
 
 # %% PASSO 7 - Quais cestões passam da capacidade? (70 t ou 78 m³)
+# [EM AVALIAÇÃO] o cestoes_acima_do_limite.csv foi ideia do Lucas.
+# O Gráfico 10 (ITEM 2 - QUALIDADE DOS DADOS, mais abaixo) já mostra a
+# mesma informação de forma agregada (quantos cestões, por qual
+# motivo) — então, pra fins de EDA, esse CSV não é estritamente
+# necessário. Mas se a ideia for usar como lista operacional (ex:
+# entregar pra EVCOMX conferir manualmente quais corridas excederam),
+# aí tem um propósito diferente do gráfico e vale manter. Decidir com
+# o Lucas antes de cortar.
 passou = total[(total["peso_t"] > 70) | (total["volume_m3"] > 78)]
 print("Cestões acima do limite:", len(passou))
 print("  acima de 70 t (peso):", (total["peso_t"] > 70).sum())
 print("  acima de 78 m³ (volume):", (total["volume_m3"] > 78).sum())
 passou.to_csv("cestoes_acima_do_limite.csv", index=False)
 
+
 # =====================================================================
-# PARTE 2 - QUALIDADE DOS DADOS (só identificar, sem alterar nada)
+# ITEM 2 — QUALIDADE DOS DADOS
+# Identificação de nulos, duplicatas, peso zerado, consistência da
+# variável resposta, e os gráficos/resumos que sintetizam esses
+# problemas. As decisões de limpeza em si (o que fazer com cada caso)
+# já estão implementadas na Parte A; aqui fica só a investigação que
+# levou a cada decisão.
 # =====================================================================
 
 # %% PASSO 8 - Valores ausentes (nulos)
@@ -98,24 +156,6 @@ peso_zero = base[base["qt_peso_carregamento"] == 0]
 print("Linhas com peso 0:", len(peso_zero))
 print(peso_zero["nu_carregamento"].value_counts())
 
-# %% PASSO 13 - Montagem: material Leve fora do lugar?
-# Regra: Leve no fundo e no topo, Pesado no meio.
-# Criamos a posição relativa: 0 = fundo, 1 = topo.
-cestoes = cestoes.sort_values(["cd_corrida", "nu_carregamento", "nu_camada"])
-ultima_camada = cestoes.groupby(["cd_corrida", "nu_carregamento"])["nu_camada"].transform("max")
-cestoes["posicao"] = cestoes["nu_camada"] / ultima_camada
-
-# Dividimos em três faixas: fundo, meio, topo
-cestoes["faixa"] = pd.cut(cestoes["posicao"], [0, 0.3, 0.7, 1.0], labels=["fundo", "meio", "topo"])
-
-# Tabela: para cada classe, que % fica em cada faixa
-print((pd.crosstab(cestoes["tp_material"], cestoes["faixa"], normalize="index") * 100).round(1))
-
-# Qual é a classe da primeira e da última camada de cada cestão?
-grupos = cestoes.groupby(["cd_corrida", "nu_carregamento"])["tp_material"]
-print("\nClasse do FUNDO:\n", grupos.first().value_counts(normalize=True).round(3))
-print("Classe do TOPO:\n", grupos.last().value_counts(normalize=True).round(3))
-
 # %% PASSO 14 - A variável resposta está consistente?
 # Carga alta geral deve ser 1 quando carregamento 1 OU 2 teve carga alta.
 c1 = resposta["is_carga_alta_carregamento_1"]
@@ -138,70 +178,115 @@ corridas_com_c2 = set(base[base["nu_carregamento"] == 2]["cd_corrida"])
 estranhas = resposta[(c2 == 1) & (~resposta["cd_corrida"].isin(corridas_com_c2))]
 print("Carga alta no c2 sem c2 na base:", len(estranhas))
 
-# %% PASSO 15 - Taxa de carga alta
-print("Geral:", round(geral.mean() * 100, 1), "%")
-print("Carregamento 1:", round(c1.mean() * 100, 1), "%")
-print("Carregamento 2:", round(c2.mean() * 100, 1), "%")
+# [REMOVIDO] Passo 13 (montagem: material Leve fora do lugar) -
+# duplicado pelos Gráficos 14 e 15 (ITEM 6 - ANÁLISE BIVARIADA, mais
+# abaixo). Passo 15 (print da taxa de carga alta) - duplicado pelo
+# Gráfico 3 (ITEM 3 - ANÁLISE UNIVARIADA).
 
-# =====================================================================
-# GRÁFICOS (cada um é independente)
-# =====================================================================
+# -----------------------------------------------------------------
+# Identificação coluna a coluna (qual linha está nula em cada coluna)
+# -----------------------------------------------------------------
+#%%
+base[base["pk_aci_corrida"].isnull()]
 
-# %% GRÁFICO 1 - Peso dos cestões
-for numero in [1, 2]:
-    pesos = total[total["nu_carregamento"] == numero]["peso_t"]
-    plt.hist(pesos, bins=30)
-    plt.axvline(70, color="red", linestyle="--", label="70 t")
-    plt.title(f"Peso do cestão - carregamento {numero}")
-    plt.xlabel("toneladas")
-    plt.ylabel("quantidade de cestões")
-    plt.legend()
-    plt.show()
+# %%
+base[base["nu_carregamento"].isnull()]
 
-# %% GRÁFICO 2 - Volume dos cestões
-for numero in [1, 2]:
-    volumes = total[total["nu_carregamento"] == numero]["volume_m3"]
-    plt.hist(volumes, bins=30)
-    plt.axvline(78, color="red", linestyle="--", label="78 m³")
-    plt.title(f"Volume do cestão - carregamento {numero}")
-    plt.xlabel("m³")
-    plt.ylabel("quantidade de cestões")
-    plt.legend()
-    plt.show()
+# %%
+base[base["nu_camada"].isnull()]
 
-# %% GRÁFICO 3 - Taxa de carga alta
-nomes = ["Geral", "Carreg. 1", "Carreg. 2"]
-taxas = [geral.mean() * 100, c1.mean() * 100, c2.mean() * 100]
-plt.bar(nomes, taxas, color=["red", "blue", "orange"])
-plt.title("Taxa de carga alta (%)")
-plt.ylabel("% das corridas")
-plt.show()
+# %%
+base[base["cd_codigo_material"].isnull()]
+# %%
+base[base["qt_peso_carregamento"].isnull()]
 
-# %% GRÁFICO 4 - Valores ausentes por coluna
-nulos = (base.isnull().mean() * 100)
-nulos = nulos[nulos > 0].sort_values()
-nulos.plot(kind="barh")
-plt.title("% de valores ausentes por coluna")
-plt.xlabel("%")
-plt.show()
+# %%
+base[base["ds_descricao_material_x"].isnull()]
+# %%
+base[base["cd_baia"].isnull()]
+# %%
+base[base["dt_hora_consumo"].isnull()]
+# %%
+base[base["ds_descricao_material_y"].isnull()]
+# %%
+base[base["tp_material"].isnull()]
+# %%
+base[base["Metálico"].isnull()]
+# %%
+base[base["Energia Elétrica"].isnull()]
 
-# %% GRÁFICO 5 - Volume com e sem carga alta (carregamento 1)
-juntos = total.merge(resposta, on="cd_corrida")      # junta as duas tabelas
-c1_dados = juntos[juntos["nu_carregamento"] == 1]
-sem = c1_dados[c1_dados["is_carga_alta_carregamento_1"] == 0]["volume_m3"]
-com = c1_dados[c1_dados["is_carga_alta_carregamento_1"] == 1]["volume_m3"]
-plt.boxplot([sem, com], tick_labels=["sem carga alta", "com carga alta"])
-plt.title("Volume do cestão 1: com e sem carga alta")
-plt.ylabel("m³")
-plt.show()
-print("Média sem:", round(sem.mean(), 1), "| média com:", round(com.mean(), 1))
+# %%
+base[base["Densidade t/m3"].isnull()]
+# %%
+base[base["Rendimento Metálico %"].isnull()]
 
-# =====================================================================
-# GRÁFICOS 8 A 18 - código único
-# Coloque base.csv e VariavelResposta.csv na mesma pasta deste arquivo.
-# Cada gráfico é salvo na pasta ./graficos/
-# =====================================================================
+# Como é possivel ver, as colunas com linhas nulas são: cd_baia, dt_hora_consumo, Metálico, Energia Elétrica, Densidade t/m3 e Rendimento Metálico %.
 
+# -----------------------------------------------------------------
+# 1) LIMPEZA DE FATO - decisões sobre cada nulo/duplicata/peso zero
+# -----------------------------------------------------------------
+# [ ] cd_baia e dt_hora_consumo nulos: já sabemos que é 100% GUSL
+#     (gusa líquido, não vem de baia nem tem hora de "consumo" de
+#     sucata). Decidir: mantém o nulo (é estrutural, não é erro) ou
+#     preenche com algum marcador tipo "N/A - gusa líquido"? Documentar
+#     a decisão e o porquê.
+
+# [ORGANIZAÇÃO] A célula de limpeza de cd_baia/dt_hora_consumo que
+# estava aqui foi movida pra Parte A, bloco A.1.
+
+# [ ] Metálico, Energia Elétrica, Densidade t/m3, Rendimento Metálico %
+#     nulos: isso acontece pra linhas cujo cd_codigo_material não bate
+#     com nenhum material do dicionário (RECG, RECC, e também os
+#     insumos CAL/COQUE, que têm código mas não têm essas propriedades
+#     por não serem sucata metálica). Decidir, pra cada caso:
+#       - RECG/RECC: dá pra conseguir a densidade/energia/rendimento
+#         de outra forma (perguntar pro cliente, assumir valor de um
+#         material parecido)? Ou essas linhas ficam de fora de contas
+#         que dependem de volume_m3 (já que volume = peso/densidade
+#         não dá pra calcular sem densidade)?
+#       - CAL/COQUE (insumos): confirmar se eles devem ENTRAR na conta
+#         de peso/volume do cestão ou se devem ser removidos antes de
+#         calcular peso_t e volume_m3 por cestão (o guia oficial trata
+#         eles como "insumos", não como sucata metálica - então
+#         provavelmente não deveriam contar no peso que define carga
+#         alta, mas isso precisa ser confirmado e registrado).
+#
+# [ ] As 2 linhas 100% duplicadas: decidir se remove ou investiga se
+#     são duas corridas reais que coincidem em tudo.
+
+#%%
+dup_total = base[base.duplicated(keep=False)]
+print("Índice no DataFrame:", dup_total.index.tolist())
+print("Linha no arquivo CSV:", [i + 2 for i in dup_total.index.tolist()])
+
+# [ORGANIZAÇÃO] A célula que remove as duplicatas (drop_duplicates) foi
+# movida pra Parte A, bloco A.2.
+#
+# [ ] As 28 linhas com mesma chave corrida+carregamento+camada
+#     repetida: isso é mais grave que duplicata simples - pode ser
+#     erro de sistema (mesma camada registrada duas vezes com pesos
+#     diferentes?). Precisa investigar essas 28 linhas especificamente
+#     antes de decidir o que fazer.
+#
+# [ ] As 2030 linhas com peso = 0: decidir se é erro de registro
+#     (remover), camada cancelada (remover ou manter como categoria
+#     própria) ou outra coisa. Isso é MUITA linha pra simplesmente
+#     ignorar sem entender a causa.
+
+# [ORGANIZAÇÃO] A célula que imputa o peso zero pela mediana do
+# material foi movida pra Parte A, bloco A.3.
+#
+# [ ] Depois de decidir tudo isso, documentar num resumo tipo "decisão
+#     de limpeza": coluna / problema / decisão / justificativa. É isso
+#     que os avaliadores querem ver (Guia, seção 10.1: "Visão crítica -
+#     identificar limitações dos dados").
+
+# -----------------------------------------------------------------
+# Configuração comum dos gráficos (usada por este item e pelos itens
+# 3 e 6 mais abaixo - leitura de base/resposta, funções mostrar/br/
+# pct, cores e pasta de saída). Só precisa rodar uma vez.
+# -----------------------------------------------------------------
+#%%
 import os
 import numpy as np
 import pandas as pd
@@ -244,7 +329,7 @@ def pct(valor, casas=1):
     return f"{valor:.{casas}f}".replace(".", ",") + "%"
 
 
-# ---------- PASSO 0b - Ler e preparar os dados
+# ---------- Ler e preparar os dados (base pra todos os gráficos) ----------
 base = pd.read_csv("base.csv")
 resposta = pd.read_csv("VariavelResposta.csv")
 
@@ -269,100 +354,9 @@ juntos["carga_alta"] = np.where(
     juntos["is_carga_alta_carregamento_2"],
 )
 
-# ---------- GRÁFICO 8 - Corridas por mês (período coberto)
-# Horário de Brasília, usando o primeiro carregamento de cada corrida
-#primeiro = base[base["nu_carregamento"] == 1].groupby("cd_corrida")["dt_hora_consumo"].min().dropna()
-#primeiro = primeiro.dt.tz_convert("America/Sao_Paulo").dt.tz_localize(None)
-#por_mes = primeiro.dt.to_period("M").value_counts().sort_index()
-
-#nomes_mes = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
-#rotulos = [f"{nomes_mes[p.month - 1]}/{str(p.year)[2:]}" for p in por_mes.index]
-#cores = [CINZA] + [AZUL] * (len(por_mes) - 2) + [CINZA]     # meses das pontas = incompletos
-
-#fig, ax = plt.subplots(figsize=(10, 4.5))
-#barras = ax.bar(rotulos, por_mes.values, color=cores)
-#ax.bar_label(barras, padding=3)
-#ax.set_title(
-#    "Datas das corridas, de ago/2025 a ago/2026 (cinza = mês incompleto)",
-#    loc="left", fontweight="bold",
-# )
-#ax.set_ylabel("corridas")
-#mostrar("08_corridas_por_mes")
-
-# ---------- GRÁFICO 9 - Carregamentos por tipo
-carregamentos = base[["cd_corrida", "nu_carregamento"]].drop_duplicates()
-contagem = carregamentos["nu_carregamento"].value_counts().sort_index()
-
-fig, ax = plt.subplots(figsize=(7, 4.5))
-nomes = ["Carregamento 1\n(cestão)", "Carregamento 2\n(cestão)", "Carregamento 3\n(gusa líquido)"]
-barras = ax.bar(nomes, contagem.values, color=[AZUL, LARANJA, CINZA])
-ax.bar_label(barras, labels=[br(v) for v in contagem.values], padding=3)
-ax.set_title(
-    "Quantidade de carregamentos",
-    loc="left", fontweight="bold",
-)
-ax.set_ylim(0, contagem.max() * 1.12)
-ax.set_ylabel("carregamentos")
-mostrar("09_carregamentos_por_tipo")
-
-# ---------- GRÁFICO 10 - Cestões que excedem o limite, por motivo
-acima_peso = total["peso_t"] > 70
-acima_volume = total["volume_m3"] > 78
-so_volume = (acima_volume & ~acima_peso).sum()
-so_peso = (acima_peso & ~acima_volume).sum()
-os_dois = (acima_peso & acima_volume).sum()
-excedem = so_volume + so_peso + os_dois
-
-fig, ax = plt.subplots(figsize=(7, 4.5))
-nomes = ["Só volume\n(> 78 m³)", "Só peso\n(> 70 t)", "Peso e volume"]
-valores = [so_volume, so_peso, os_dois]
-barras = ax.bar(nomes, valores, color=VERMELHO)
-ax.bar_label(barras, labels=[br(v) for v in valores], padding=3)
-ax.set_title(
-    "Cestões que excederam o limite",
-    loc="left", fontweight="bold", fontsize=11,
-)
-ax.set_ylim(0, max(valores) * 1.12)
-ax.set_ylabel("cestões")
-mostrar("10_cestoes_que_excedem")
-
-# ---------- GRÁFICO 11 - Peso contra volume (carregamento 1)
-c1 = total[total["nu_carregamento"] == 1]
-correlacao = c1["peso_t"].corr(c1["volume_m3"])
-passou = (c1["peso_t"] > 70) | (c1["volume_m3"] > 78)
-
-fig, ax = plt.subplots(figsize=(7.5, 5.5))
-ax.scatter(c1[~passou]["peso_t"], c1[~passou]["volume_m3"], s=10, alpha=0.4, color=AZUL, label="dentro do limite")
-ax.scatter(c1[passou]["peso_t"], c1[passou]["volume_m3"], s=10, alpha=0.6, color=VERMELHO, label="excede peso ou volume")
-ax.axvline(70, color="black", linestyle="--", linewidth=1)
-ax.axhline(78, color="black", linestyle="--", linewidth=1)
-ax.set_xlabel("peso do cestão (t)")
-ax.set_ylabel("volume estimado (m³)")
-ax.set_title(
-    f"Peso X Volume (correlação {correlacao:.2f})".replace(".", ","),
-    loc="left", fontweight="bold", fontsize=11,
-)
-ax.legend()
-mostrar("11_peso_contra_volume")
-
-# ---------- GRÁFICO 12 - Duração das paradas por carga alta
-paradas = resposta[resposta["is_carga_alta"] == 1]["qt_segundos_parada_carga_alta"]
-mediana = paradas.median()
-media = paradas.mean()
-minutos_total = paradas.sum() / 60
-
-fig, ax = plt.subplots(figsize=(8, 4.5))
-ax.hist(paradas, bins=40, color=VERMELHO, alpha=0.85)
-ax.axvline(mediana, color="black", linestyle="--", label=f"mediana: {mediana:.0f} s")
-ax.axvline(media, color=AZUL, linestyle="--", label=f"média: {media:.0f} s")
-ax.set_title(
-    "Tempo de parada",
-    loc="left", fontweight="bold", fontsize=11,
-)
-ax.set_xlabel("duração da parada (segundos)")
-ax.set_ylabel("corridas com carga alta")
-ax.legend()
-mostrar("12_duracao_das_paradas")
+# [REMOVIDO] Gráfico 8 (corridas por mês) - já estava inteiro
+# comentado/desativado no código original, não rodava nada. Removido
+# de vez.
 
 # ---------- GRÁFICO 13 - cd_baia ausente: só no gusa líquido
 eh_gusl = base["cd_codigo_material"] == "GUSL"
@@ -386,63 +380,28 @@ ax.set_title(
 ax.set_ylabel("% de cd_baia ausente")
 mostrar("13_cd_baia_ausente")
 
-# ---------- PASSO 14 - Posição relativa de cada camada (usado nos gráficos 14 e 15)
-cestoes = cestoes.sort_values(["cd_corrida", "nu_carregamento", "nu_camada"])
-ultima_camada = cestoes.groupby(["cd_corrida", "nu_carregamento"])["nu_camada"].transform("max")
-cestoes["posicao"] = cestoes["nu_camada"] / ultima_camada
-cestoes["faixa"] = pd.cut(cestoes["posicao"], [0, 0.3, 0.7, 1.0], labels=["fundo", "meio", "topo"])
+# ---------- GRÁFICO 10 - Cestões que excedem o limite, por motivo
+acima_peso = total["peso_t"] > 70
+acima_volume = total["volume_m3"] > 78
+so_volume = (acima_volume & ~acima_peso).sum()
+so_peso = (acima_peso & ~acima_volume).sum()
+os_dois = (acima_peso & acima_volume).sum()
+excedem = so_volume + so_peso + os_dois
 
-# ---------- GRÁFICO 14 - Onde cada classe de material aparece no cestão
-tabela = pd.crosstab(cestoes["tp_material"], cestoes["faixa"], normalize="index") * 100
-tabela = tabela.reindex(["Pesado", "Misto", "Leve"])        # Leve fica embaixo no gráfico
-leve_meio = tabela.loc["Leve", "meio"]
-
-fig, ax = plt.subplots(figsize=(9, 4.2))
-esquerda = np.zeros(len(tabela))
-for faixa, cor in [("fundo", AZUL), ("meio", CINZA), ("topo", LARANJA)]:
-    ax.barh(tabela.index, tabela[faixa], left=esquerda, color=cor, label=faixa)
-    for i, valor in enumerate(tabela[faixa]):
-        ax.text(
-            esquerda[i] + valor / 2, i, f"{valor:.0f}%".replace(".", ","),
-            ha="center", va="center", color="white", fontweight="bold",
-        )
-    esquerda = esquerda + tabela[faixa].values
+fig, ax = plt.subplots(figsize=(7, 4.5))
+nomes = ["Só volume\n(> 78 m³)", "Só peso\n(> 70 t)", "Peso e volume"]
+valores = [so_volume, so_peso, os_dois]
+barras = ax.bar(nomes, valores, color=VERMELHO)
+ax.bar_label(barras, labels=[br(v) for v in valores], padding=3)
 ax.set_title(
-    "% dos materiais",
+    "Cestões que excederam o limite",
     loc="left", fontweight="bold", fontsize=11,
 )
-ax.set_xlabel("% das linhas de cada classe")
-ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=3, frameon=False)
-ax.grid(False)
-mostrar("14_onde_cada_classe_aparece")
-
-# ---------- GRÁFICO 15 - Classe da camada de fundo e de topo
-classes_cestao = cestoes.groupby(["cd_corrida", "nu_carregamento"])["tp_material"]
-fundo = classes_cestao.first().value_counts(normalize=True) * 100
-topo = classes_cestao.last().value_counts(normalize=True) * 100
-resumo = pd.DataFrame({"Fundo": fundo, "Topo": topo}).fillna(0).T
-resumo = resumo.reindex(columns=["Leve", "Misto", "Pesado"]).fillna(0)
-
-fig, ax = plt.subplots(figsize=(7.5, 4.5))
-resumo.plot(kind="bar", ax=ax, color=[AZUL, CINZA, VERMELHO], rot=0, width=0.7)
-for barra in ax.patches:
-    if barra.get_height() > 0:
-        ax.text(
-            barra.get_x() + barra.get_width() / 2, barra.get_height() + 1.5,
-            f"{barra.get_height():.0f}%", ha="center",
-        )
-ax.set_title(
-    "Análise do material leve",
-    loc="left", fontweight="bold", fontsize=11,
-)
-ax.set_ylabel("% dos cestões")
-ax.set_ylim(0, 108)
-ax.legend(title="Classe da camada", frameon=False)
-mostrar("15_fundo_e_topo")
+ax.set_ylim(0, max(valores) * 1.12)
+ax.set_ylabel("cestões")
+mostrar("10_cestoes_que_excedem")
 
 # ---------- GRÁFICO 16 - Resumo dos problemas de qualidade (cada barra tem sua unidade)
-colunas_chave = ["cd_corrida", "nu_carregamento", "nu_camada"]
-corridas_com_c2 = set(base[base["nu_carregamento"] == 2]["cd_corrida"])
 flag_c2_sem_c2 = (
     (resposta["is_carga_alta_carregamento_2"] == 1)
     & (~resposta["cd_corrida"].isin(corridas_com_c2))
@@ -471,270 +430,75 @@ fig.suptitle(
 ax.set_xlabel("ocorrências (a unidade está no nome de cada barra)")
 mostrar("16_resumo_de_problemas")
 
-# ---------- GRÁFICO 17 - Volume do cestão 2: com e sem carga alta
-c2 = juntos[juntos["nu_carregamento"] == 2]
-sem = c2[c2["carga_alta"] == 0]["volume_m3"]
-com = c2[c2["carga_alta"] == 1]["volume_m3"]
+# -----------------------------------------------------------------
+# Investigação: as 152 linhas "sem_hora_suspeito" (dt_hora_consumo
+# nulo, fora do GUSL) - resumo da investigação que levou à decisão já
+# implementada na Parte A, bloco A.1.
+# -----------------------------------------------------------------
+# [CONDENSADO] A investigação original (7 células de código) confirmou:
+# 152 linhas sem dt_hora_consumo, fora do GUSL, concentradas em 13
+# corridas - cada uma com só uma fração das suas linhas sólidas
+# afetada (nunca 100% de uma corrida), ou seja, falha pontual de
+# registro, não um padrão estrutural. O peso dessas linhas é normal
+# (não é zero nem nulo), reforçando que é só a hora que falhou, não o
+# resto do registro. Decisão: estimar a hora pela mediana do
+# carregamento irmão (1 ou 2) da mesma corrida, marcando
+# dt_hora_consumo_estimada = True (implementado na Parte A, bloco A.1).
 
-fig, ax = plt.subplots(figsize=(6.5, 4.8))
-caixas = ax.boxplot(
-    [sem, com], tick_labels=["sem carga alta", "com carga alta"],
-    patch_artist=True, showfliers=False,
-)
-for caixa, cor in zip(caixas["boxes"], [AZUL, VERMELHO]):
-    caixa.set_facecolor(cor)
-    caixa.set_alpha(0.6)
-ax.axhline(78, color="black", linestyle="--", linewidth=1)
-ax.text(1.5, 78.8, "78 m³", ha="center")
+
+# =====================================================================
+# ITEM 3 — ANÁLISE UNIVARIADA
+# Cada variável olhada sozinha: taxa de carga alta, carregamentos por
+# tipo, duração das paradas, propriedades dos materiais e número de
+# camadas por cestão.
+# =====================================================================
+
+# %% GRÁFICO 3 - Taxa de carga alta
+nomes = ["Geral", "Carreg. 1", "Carreg. 2"]
+taxas = [geral.mean() * 100, c1.mean() * 100, c2.mean() * 100]
+plt.bar(nomes, taxas, color=["red", "blue", "orange"])
+plt.title("Taxa de carga alta (%)")
+plt.ylabel("% das corridas")
+plt.show()
+
+# ---------- GRÁFICO 9 - Carregamentos por tipo
+carregamentos = base[["cd_corrida", "nu_carregamento"]].drop_duplicates()
+contagem = carregamentos["nu_carregamento"].value_counts().sort_index()
+
+fig, ax = plt.subplots(figsize=(7, 4.5))
+nomes = ["Carregamento 1\n(cestão)", "Carregamento 2\n(cestão)", "Carregamento 3\n(gusa líquido)"]
+barras = ax.bar(nomes, contagem.values, color=[AZUL, LARANJA, CINZA])
+ax.bar_label(barras, labels=[br(v) for v in contagem.values], padding=3)
 ax.set_title(
-    "Cestão 2: volume médio",
+    "Quantidade de carregamentos",
+    loc="left", fontweight="bold",
+)
+ax.set_ylim(0, contagem.max() * 1.12)
+ax.set_ylabel("carregamentos")
+mostrar("09_carregamentos_por_tipo")
+
+# ---------- GRÁFICO 12 - Duração das paradas por carga alta
+paradas = resposta[resposta["is_carga_alta"] == 1]["qt_segundos_parada_carga_alta"]
+mediana = paradas.median()
+media = paradas.mean()
+minutos_total = paradas.sum() / 60
+
+fig, ax = plt.subplots(figsize=(8, 4.5))
+ax.hist(paradas, bins=40, color=VERMELHO, alpha=0.85)
+ax.axvline(mediana, color="black", linestyle="--", label=f"mediana: {mediana:.0f} s")
+ax.axvline(media, color=AZUL, linestyle="--", label=f"média: {media:.0f} s")
+ax.set_title(
+    "Tempo de parada",
     loc="left", fontweight="bold", fontsize=11,
 )
-ax.set_ylabel("volume estimado (m³)")
-mostrar("17_volume_cestao2_com_e_sem_carga_alta")
-
-# ---------- GRÁFICO 18 - Carga alta por faixa de peso (carregamento 1) - PRÉVIA
-c1j = juntos[juntos["nu_carregamento"] == 1].copy()
-c1j["faixa_peso"] = pd.cut(c1j["peso_t"], [0, 50, 55, 60, 65, 70, np.inf], labels=["até 50 t", "50 a 55 t", "55 a 60 t", "60 a 65 t", "65 a 70 t", "acima de 70 t"])
-por_faixa = c1j.groupby("faixa_peso", observed=True)["carga_alta"].agg(["size", "mean"])
-media_geral = c1j["carga_alta"].mean() * 100
-
-fig, ax = plt.subplots(figsize=(9, 4.8))
-barras = ax.bar(por_faixa.index.astype(str), por_faixa["mean"] * 100, color=VERMELHO, alpha=0.85)
-rotulos = []
-for n, m in zip(por_faixa["size"], por_faixa["mean"]):
-    aviso = "\npoucos casos" if n < 100 else ""
-    rotulos.append(f"{pct(m * 100)}\n(n={br(n)}){aviso}")
-ax.bar_label(barras, labels=rotulos, padding=3, fontsize=9)
-ax.axhline(media_geral, color="black", linestyle="--", linewidth=1)
-ax.text(len(por_faixa) - 0.5, media_geral + 1, f"média: {pct(media_geral)}", ha="right")
-ax.set_ylim(0, por_faixa["mean"].max() * 100 * 1.25)
-ax.set_title(
-    "Carregamento 1: % de carga alta pelo peso do cestão",
-    loc="left", fontweight="bold", fontsize=11,
-)
-ax.set_xlabel("peso do cestão")
-ax.set_ylabel("% com carga alta")
-mostrar("18_carga_alta_por_faixa_de_peso")
-
-#==========================================
-# PARTE 3: LIMPANDO OS DADOS
-#==========================================
-
-# %% 
-base[base["pk_aci_corrida"].isnull()]
-
-# %%
-base[base["nu_carregamento"].isnull()]
-
-# %%
-base[base["nu_camada"].isnull()]
-
-# %%
-base[base["cd_codigo_material"].isnull()]
-# %%
-base[base["qt_peso_carregamento"].isnull()]
-
-# %%
-base[base["ds_descricao_material_x"].isnull()]
-# %%
-base[base["cd_baia"].isnull()]
-# %%
-base[base["dt_hora_consumo"].isnull()]
-# %%
-base[base["ds_descricao_material_y"].isnull()]
-# %%
-base[base["tp_material"].isnull()]
-# %%
-base[base["Metálico"].isnull()]
-# %%
-base[base["Energia Elétrica"].isnull()]
-
-# %%
-base[base["Densidade t/m3"].isnull()]
-# %%
-base[base["Rendimento Metálico %"].isnull()]
-
-# Como é possivel ver, as colunas com linhas nulas são: cd_baia, dt_hora_consumo, Metálico, Energia Elétrica, Densidade t/m3 e Rendimento Metálico %.
-# =====================================================================
-# O QUE FALTA PARA TERMINAR A EDA (guia pra terminar, não o código)
-# Comparado com o Guia oficial da EVCOMX (seções 3, 6, 7, 8 e 10.1/10.2)
-# e com o checklist que já passei pro grupo. Só anotações, nada daqui
-# roda sozinho. Cada item diz O QUE fazer, não COMO.
-# =====================================================================
+ax.set_xlabel("duração da parada (segundos)")
+ax.set_ylabel("corridas com carga alta")
+ax.legend()
+mostrar("12_duracao_das_paradas")
 
 # -----------------------------------------------------------------
-# 1) LIMPEZA DE FATO - falta DECIDIR o que fazer com cada nulo
+# 2) ANÁLISE UNIVARIADA - dicionário de materiais e num_camadas
 # -----------------------------------------------------------------
-# O que está até a linha 565 só IDENTIFICA onde tem nulo, coluna por
-# coluna. Isso é só metade do trabalho de limpeza - falta decidir e
-# documentar o que fazer com cada caso:
-#
-# [ ] cd_baia e dt_hora_consumo nulos: já sabemos que é 100% GUSL
-#     (gusa líquido, não vem de baia nem tem hora de "consumo" de
-#     sucata). Decidir: mantém o nulo (é estrutural, não é erro) ou
-#     preenche com algum marcador tipo "N/A - gusa líquido"? Documentar
-#     a decisão e o porquê.
-
-# =====================================================================
-# LIMPEZA - cd_baia e dt_hora_consumo
-# Decisões tomadas (ver conversa/documentação do grupo):
-#   1) cd_baia nulo (100% GUSL)      -> marcador "SEM_BAIA_GUSL"
-#   2) dt_hora_consumo nulo (GUSL)   -> mantém NaT (ausência estrutural)
-#   3) dt_hora_consumo nulo (falha pontual, 152 linhas, 13 corridas)
-#      -> estimado com a hora do carregamento irmão (1 ou 2) da MESMA
-#         corrida, marcado em dt_hora_consumo_estimada = True
-# =====================================================================
-#%%
-import pandas as pd
-
-base = pd.read_csv("base.csv")
-base["dt_hora_consumo"] = pd.to_datetime(base["dt_hora_consumo"], utc=True, format="ISO8601")
-
-eh_gusl = base["cd_codigo_material"] == "GUSL"
-
-# ---------- 1) cd_baia: marcador pro GUSL ----------
-# Converte pra texto primeiro (evita erro de tipo ao misturar número com
-# texto), preservando os códigos de baia existentes sem a casa decimal.
-base["cd_baia"] = base["cd_baia"].apply(
-    lambda v: "SEM_BAIA_GUSL" if pd.isnull(v) else str(int(v))
-)
-
-# ---------- 2) e 3) dt_hora_consumo ----------
-# Coluna de controle: True só nas linhas onde a hora foi estimada
-# (não é um dado medido de verdade).
-base["dt_hora_consumo_estimada"] = False
-
-# Linhas problemáticas: nulo, não é GUSL, é carregamento 1 ou 2
-mascara_suspeitos = (
-    base["dt_hora_consumo"].isnull()
-    & ~eh_gusl
-    & base["nu_carregamento"].isin([1, 2])
-)
-
-# Hora "representativa" de cada corrida, usando só carregamentos 1/2
-# com hora registrada (a mediana evita que um valor isolado puxe o
-# resultado, caso existam várias camadas com horários um pouco
-# diferentes dentro do mesmo carregamento)
-hora_por_corrida = (
-    base.loc[base["dt_hora_consumo"].notnull() & base["nu_carregamento"].isin([1, 2])]
-    .groupby("cd_corrida")["dt_hora_consumo"]
-    .median()
-)
-
-base.loc[mascara_suspeitos, "dt_hora_consumo"] = base.loc[mascara_suspeitos, "cd_corrida"].map(hora_por_corrida)
-base.loc[mascara_suspeitos, "dt_hora_consumo_estimada"] = True
-
-# dt_hora_consumo nulo do GUSL fica como está (NaT) - não precisa de ação,
-# já é o comportamento padrão do pandas.
-
-# ---------- Conferência ----------
-print("cd_baia nulos restantes:", base["cd_baia"].isnull().sum())
-print("dt_hora_consumo nulos restantes:", base["dt_hora_consumo"].isnull().sum())
-print("  (esperado: só os do GUSL)")
-print(base[base["dt_hora_consumo"].isnull()]["cd_codigo_material"].value_counts())
-print("Linhas com hora estimada:", base["dt_hora_consumo_estimada"].sum())
-
-# ---------- Salvar ----------
-base.to_csv("base.csv", index=False)
-print("\nbase.csv atualizado e salvo.")
-
-
-
-# [ ] Metálico, Energia Elétrica, Densidade t/m3, Rendimento Metálico %
-#     nulos: isso acontece pra linhas cujo cd_codigo_material não bate
-#     com nenhum material do dicionário (RECG, RECC, e também os
-#     insumos CAL/COQUE, que têm código mas não têm essas propriedades
-#     por não serem sucata metálica). Decidir, pra cada caso:
-#       - RECG/RECC: dá pra conseguir a densidade/energia/rendimento
-#         de outra forma (perguntar pro cliente, assumir valor de um
-#         material parecido)? Ou essas linhas ficam de fora de contas
-#         que dependem de volume_m3 (já que volume = peso/densidade
-#         não dá pra calcular sem densidade)?
-#       - CAL/COQUE (insumos): confirmar se eles devem ENTRAR na conta
-#         de peso/volume do cestão ou se devem ser removidos antes de
-#         calcular peso_t e volume_m3 por cestão (o guia oficial trata
-#         eles como "insumos", não como sucata metálica - então
-#         provavelmente não deveriam contar no peso que define carga
-#         alta, mas isso precisa ser confirmado e registrado).
-#
-# [ ] As 2 linhas 100% duplicadas (Passo 11): decidir se remove ou
-#     investiga se são duas corridas reais que coincidem em tudo.
-
-#%%
-dup_total = base[base.duplicated(keep=False)]
-print("Índice no DataFrame:", dup_total.index.tolist())
-print("Linha no arquivo CSV:", [i + 2 for i in dup_total.index.tolist()])
-
-#%%
-import pandas as pd
-
-base = pd.read_csv("base.csv")
-
-antes = len(base)
-base = base.drop_duplicates(keep="first")
-depois = len(base)
-
-print(f"Linhas removidas: {antes - depois}")
-
-base.to_csv("base.csv", index=False)
-print("base.csv atualizado e salvo.")
-#
-# [ ] As 28 linhas com mesma chave corrida+carregamento+camada
-#     repetida (Passo 11): isso é mais grave que duplicata simples -
-#     pode ser erro de sistema (mesma camada registrada duas vezes com
-#     pesos diferentes?). Precisa investigar essas 28 linhas
-#     especificamente antes de decidir o que fazer.
-#
-# [ ] As 2030 linhas com peso = 0 (Passo 12): decidir se é erro de
-#     registro (remover), camada cancelada (remover ou manter como
-#     categoria própria) ou outra coisa. Isso é MUITA linha pra
-#     simplesmente ignorar sem entender a causa.
-
-#%%
-import pandas as pd
-
-base = pd.read_csv("base.csv")
-
-# Mediana de peso por material, calculada só com as linhas que têm peso real (>0)
-mediana_por_material = (
-    base.loc[base["qt_peso_carregamento"] > 0]
-    .groupby("cd_codigo_material")["qt_peso_carregamento"]
-    .median()
-)
-
-# Linhas com problema de pesagem (peso registrado como zero)
-mascara_zero = base["qt_peso_carregamento"] == 0
-
-# Coluna de controle: True só nas linhas onde o peso foi estimado
-# (não é um dado medido de verdade)
-base["peso_estimado"] = False
-
-# Substitui o peso zero pela mediana do material e marca a flag
-base.loc[mascara_zero, "qt_peso_carregamento"] = base.loc[mascara_zero, "cd_codigo_material"].map(mediana_por_material)
-base.loc[mascara_zero, "peso_estimado"] = True
-
-# ---------- Conferência ----------
-print("Linhas marcadas como peso_estimado:", base["peso_estimado"].sum())
-print("Peso zero restante:", (base["qt_peso_carregamento"] == 0).sum())
-print("Peso nulo (sem mediana p/ imputar):", base["qt_peso_carregamento"].isnull().sum())
-
-# ---------- Salvar ----------
-base.to_csv("base.csv", index=False)
-print("\nbase.csv atualizado e salvo.")
-#
-# [ ] Depois de decidir tudo isso, documentar num resumo tipo "decisão
-#     de limpeza": coluna / problema / decisão / justificativa. É isso
-#     que os avaliadores querem ver (Guia, seção 10.1: "Visão crítica -
-#     identificar limitações dos dados").
-
-# -----------------------------------------------------------------
-# 2) ANÁLISE UNIVARIADA - falta a parte do dicionário de materiais
-# -----------------------------------------------------------------
-# O que já tem: peso e volume por cestão (Gráficos 1 e 2), taxa de
-# carga alta (Gráfico 3), corridas por mês (Gráfico 8), carregamentos
-# por tipo (Gráfico 9), duração das paradas (Gráfico 12).
-#
 # Falta:
 # [ ] Univariada de Energia Elétrica, Densidade e Rendimento Metálico
 #     - essas são propriedades por MATERIAL (só 24 materiais), não por
@@ -742,24 +506,19 @@ print("\nbase.csv atualizado e salvo.")
 #     já responde: qual material tem a menor/maior densidade, qual
 #     consome mais energia, etc. (Guia, seção 3.1)
 # [ ] Univariada de num_camadas por carregamento (quantas camadas, em
-#     média, cada cestão tem) - essa feature ainda nem foi criada, ver
-#     item 4 abaixo.
+#     média, cada cestão tem).
+
+# [ORGANIZAÇÃO] A célula que converte e salva Densidade/Rendimento de
+# forma permanente foi movida pra Parte A, bloco A.4. A partir daqui
+# é só leitura/investigação, não salva nada.
 
 #%%
 import pandas as pd
 
 base = pd.read_csv("base.csv")
 
-for col in ["Densidade t/m3", "Rendimento Metálico %"]:
-    if not pd.api.types.is_numeric_dtype(base[col]):
-        base[col] = base[col].str.replace(",", ".").astype(float)
-
-base.to_csv("base.csv", index=False)
-print("Densidade e Rendimento convertidos e salvos como número.")
-print(base[["Densidade t/m3", "Rendimento Metálico %"]].dtypes)
-
 # =====================================================================
-# 1) Univariada de Energia Elétrica, Densidade e Rendimento Metálico
+# Univariada de Energia Elétrica, Densidade e Rendimento Metálico
 # Essas 3 colunas são propriedades POR MATERIAL (vêm do dicionário),
 # não por linha/corrida - então a análise certa é 1 linha por material,
 # não um histograma de 43 mil linhas repetidas.
@@ -786,7 +545,7 @@ print("Maior rendimento metálico:", props_validas.loc[props_validas["Rendimento
 print("Menor rendimento metálico:", props_validas.loc[props_validas["Rendimento Metálico %"].idxmin(), "cd_codigo_material"])
 
 # =====================================================================
-# 2) num_camadas por carregamento (feature nova + univariada)
+# num_camadas por carregamento (feature nova + univariada)
 # =====================================================================
 num_camadas = (
     base.groupby(["cd_corrida", "nu_carregamento"])["nu_camada"]
@@ -800,21 +559,24 @@ print(num_camadas["num_camadas"].describe())
 print("\n=== num_camadas - describe por carregamento (1, 2 ou 3) ===")
 print(num_camadas.groupby("nu_carregamento")["num_camadas"].describe())
 
-#%%
-# -----------------------------------------------------------------
-# 3) OUTLIERS - regra de negócio + critério estatístico
-# -----------------------------------------------------------------
+
+# =====================================================================
+# ITEM 4 — OUTLIERS
+# Regra de negócio (capacidade física: 70t / 78m³) versus critério
+# estatístico (IQR), cruzados entre si.
+# =====================================================================
 # A regra de negócio (70t / 78m³) continua sendo o critério OFICIAL
 # de "cestão acima da capacidade" - isso não muda, é limite físico.
 # Mas, DENTRO da capacidade, ainda pode ter cestão com peso/volume
 # muito fora do padrão (ex: muito mais leve que a média) - isso é
 # candidato a outlier ESTATÍSTICO, não é a mesma coisa.
 #
-# OBS: o item "peso = 0" não é mais tratado aqui - já foi resolvido
-# na seção de limpeza de fato, com imputação pela mediana do material
-# (coluna peso_estimado). Como esses valores já foram substituídos,
-# eles não aparecem mais como outlier extremo baixo.
+# OBS: o item "peso = 0" não é tratado aqui - já foi resolvido na
+# seção de limpeza de fato (ITEM 2), com imputação pela mediana do
+# material (coluna peso_estimado). Como esses valores já foram
+# substituídos, eles não aparecem mais como outlier extremo baixo.
 
+#%%
 import pandas as pd
 import numpy as np
 
@@ -871,47 +633,39 @@ so_estatistico["tipo"] = np.where(
 )
 
 print(so_estatistico.groupby(["nu_carregamento", "tipo"]).size())
-# [ ] Depois de decidir o que fazer com os outliers (manter, remover,
-#     ou marcar como uma categoria à parte), documentar a decisão.
+# [DECISÃO JÁ TOMADA, documentada na conversa com o Claude]: outliers
+# são MANTIDOS, não removidos. acima_capacidade e outlier_estatistico
+# ficam como flags; a maioria dos outliers estatísticos do carregamento
+# 2 (259 de 263) são cestões pesados legítimos, dentro da capacidade,
+# não erro de medição - remover jogaria fora justamente os casos mais
+# próximos do limite, que são os mais relevantes pra carga alta.
 
-# -----------------------------------------------------------------
-# 4) FEATURES QUE AINDA FALTAM CRIAR (antes da bivariada/multivariada)
-# -----------------------------------------------------------------
+
+# =====================================================================
+# ITEM 5 — FEATURES CRIADAS
+# As features agregadas por cestão que alimentam a análise bivariada e
+# o dataset de modelagem: num_camadas, num_materiais, peso_leve/misto/
+# pesado, prop_leve.
+# =====================================================================
 # O Guia oficial (seção 8.2) espera comparar várias features entre
-# carga_alta = 0 e carga_alta = 1, mas hoje só peso_t e volume_m3
-# existem por cestão. Faltam criar, por corrida+carregamento:
-# [ ] num_camadas - quantas camadas tem o cestão
-# [ ] num_materiais - quantos materiais DIFERENTES entram no cestão
+# carga_alta = 0 e carga_alta = 1. Por corrida+carregamento:
+# [x] num_camadas - quantas camadas tem o cestão
+# [x] num_materiais - quantos materiais DIFERENTES entram no cestão
 # [ ] peso_leve, peso_misto, peso_pesado - peso somado por classe de
 #     material dentro do cestão
 # [ ] prop_leve - proporção do peso total que é material Leve (o Guia
 #     cita isso especificamente como feature candidata)
-# Essas features são pré-requisito pra fechar o item 5 e o item 6
-# abaixo.
+
+# [ORGANIZAÇÃO] A célula que cria e salva volume_m3 no base.csv foi
+# movida pra Parte A, bloco A.5. O que ficou aqui é só a prévia do
+# features_cestao (não é salvo separadamente - foi consolidado dentro
+# do dataset_modelagem.csv, ver ITEM 9 - FECHAMENTO).
 
 #%%
-import pandas as pd
-
-base = pd.read_csv("base.csv")
-
-# Conversão vírgula -> ponto, caso você ainda não tenha rodado a limpeza permanente
-for col in ["Densidade t/m3", "Rendimento Metálico %"]:
-    if not pd.api.types.is_numeric_dtype(base[col]):
-        base[col] = base[col].str.replace(",", ".").astype(float)
-
-base["peso_t"] = base["qt_peso_carregamento"] / 1000
-
-# ---------- volume_m3: por linha, vai direto pro base.csv ----------
-base["volume_m3"] = base["peso_t"] / base["Densidade t/m3"]
-# OBS: RECG e RECC não têm densidade (já sabemos a causa), então essas
-# 10 linhas ficam com volume_m3 = NaN - é esperado, não é erro.
-
-base.to_csv("base.csv", index=False)
-print("volume_m3 criada e salva no base.csv.")
-print("Linhas sem volume_m3 (RECG/RECC):", base["volume_m3"].isnull().sum())
-
-# ---------- Features por cestão (corrida + carregamento) ----------
 num_camadas = base.groupby(["cd_corrida", "nu_carregamento"])["nu_camada"].nunique().rename("num_camadas")
+
+# num_materiais: quantos códigos de material DIFERENTES entram no cestão
+num_materiais = base.groupby(["cd_corrida", "nu_carregamento"])["cd_codigo_material"].nunique().rename("num_materiais")
 
 peso_por_classe = (
     base.groupby(["cd_corrida", "nu_carregamento", "tp_material"])["peso_t"]
@@ -922,87 +676,61 @@ peso_por_classe = (
 
 peso_total = base.groupby(["cd_corrida", "nu_carregamento"])["peso_t"].sum().rename("peso_t_total")
 
-features_cestao = pd.concat([num_camadas, peso_por_classe, peso_total], axis=1).reset_index()
+features_cestao = pd.concat([num_camadas, num_materiais, peso_por_classe, peso_total], axis=1).reset_index()
 features_cestao["prop_leve"] = features_cestao["peso_leve"] / features_cestao["peso_t_total"]
 
 
 print(features_cestao.head())
 
-# -----------------------------------------------------------------
-# 5) ANÁLISE BIVARIADA - falta quantificar e falta cobrir mais features
-# -----------------------------------------------------------------
-# O que já tem: volume com/sem carga alta (carregamento 1 e 2), peso x
-# volume (correlação entre as duas features), posição da camada x tipo
-# de material, carga alta por faixa de peso.
-#
-# Falta:
+
+# =====================================================================
+# ITEM 6 — ANÁLISE BIVARIADA
+# Cada feature contra is_carga_alta: boxplot + point-biserial, mapa de
+# correlação (multicolinearidade), peso x volume, posição da camada x
+# tipo de material, volume do cestão 2 com/sem carga alta, carga alta
+# por faixa de peso, e comparação carregamento 1 x 2.
+# =====================================================================
 # [ ] Fazer o mesmo comparativo (com/sem carga alta) pras features
-#     novas do item 4: num_camadas, num_materiais, prop_leve, etc.
+#     novas do ITEM 5: num_camadas, num_materiais, prop_leve, etc.
 # [ ] Calcular a correlação point-biserial entre cada feature numérica
 #     e is_carga_alta (o Guia pede isso explicitamente, seção 8.3,
 #     usando scipy.stats.pointbiserialr) - isso dá um número pra cada
 #     feature dizendo o quão forte é a relação com carga alta, e se
-#     isso é estatisticamente significativo (p < 0.05). Até agora só
-#     temos comparação visual (boxplot), não um número que confirme.
+#     isso é estatisticamente significativo (p < 0.05).
 # [ ] Montar o mapa de correlação completo (heatmap) entre todas as
 #     features numéricas + is_carga_alta, pra ver não só a relação com
 #     a resposta, mas também quais features são muito correlacionadas
 #     ENTRE SI (multicolinearidade - ex: peso total e volume estimado
 #     provavelmente são bem correlacionados entre si, e isso precisa
 #     ser discutido antes de meter os dois num modelo).
-# [ ] Padrões temporais: carga alta por turno e por dia da semana
-#     (Guia, seção 7) - ainda não foi feita nenhuma análise cruzando
-#     hora/dia da corrida com a taxa de carga alta, só a distribuição
-#     de corridas por mês (que é univariada, não é isso).
 # [ ] Comparar explicitamente carregamento 1 x carregamento 2 (o Guia
 #     pergunta: a taxa de carga alta é igual nos dois? Se não, por
-#     quê?) - os números já existem espalhados pelo código (Passo 15,
-#     Gráfico 3), mas falta uma conclusão escrita comparando os dois.
+#     quê?).
+
+# [ORGANIZAÇÃO] A célula que monta o dataframe "cestao" (features
+# agregadas por corrida+carregamento) está na Parte A, bloco A.6, e é
+# usada no fechamento (A.7) pra gerar dataset_modelagem.csv.
+# [AJUSTE P/ ARQUIVO SEPARADO] Como "cestao" não existe mais em memória
+# aqui (Parte A e Parte B agora são arquivos separados), lemos abaixo o
+# dataset_modelagem.csv que a Parte A já salva em disco - é a mesma
+# informação de "cestao" filtrada pros carregamentos 1 e 2, já com a
+# coluna carga_alta pronta (rode o transforma_dataset.py antes deste
+# arquivo).
 
 #%%
-import pandas as pd
-import numpy as np
 from scipy.stats import pointbiserialr
-import matplotlib
 import matplotlib.pyplot as plt
 
-base = pd.read_csv("base.csv")
-resposta = pd.read_csv("VariavelResposta.csv")
+bivariada = pd.read_csv("dataset_modelagem.csv")
+# [AJUSTE P/ ARQUIVO SEPARADO] dt_inicio volta do CSV como texto, não
+# como datetime (era datetime só enquanto "cestao" vivia em memória, na
+# Parte A) - precisa reconverter pra usar .dt no ITEM 7 (padrões temporais).
+bivariada["dt_inicio"] = pd.to_datetime(bivariada["dt_inicio"], utc=True)
 
-for col in ["Densidade t/m3", "Rendimento Metálico %"]:
-    if not pd.api.types.is_numeric_dtype(base[col]):
-        base[col] = base[col].str.replace(",", ".").astype(float)
-
-base["peso_t"] = base["qt_peso_carregamento"] / 1000
-base["volume_m3"] = base["peso_t"] / base["Densidade t/m3"]
-base["dt_hora_consumo"] = pd.to_datetime(base["dt_hora_consumo"], utc=True, format="ISO8601")
-
-# ---------- Monta a base por cestão (features + resposta) ----------
-num_camadas = base.groupby(["cd_corrida", "nu_carregamento"])["nu_camada"].nunique().rename("num_camadas")
-peso_por_classe = (
-    base.groupby(["cd_corrida", "nu_carregamento", "tp_material"])["peso_t"].sum()
-    .unstack("tp_material", fill_value=0)
-    .rename(columns={"Leve": "peso_leve", "Misto": "peso_misto", "Pesado": "peso_pesado"})
-)
-peso_total = base.groupby(["cd_corrida", "nu_carregamento"])["peso_t"].sum().rename("peso_t_total")
-volume_total = base.groupby(["cd_corrida", "nu_carregamento"])["volume_m3"].sum().rename("volume_m3_total")
-primeiro_horario = base.groupby(["cd_corrida", "nu_carregamento"])["dt_hora_consumo"].min().rename("dt_inicio")
-
-cestao = pd.concat([num_camadas, peso_por_classe, peso_total, volume_total, primeiro_horario], axis=1).reset_index()
-cestao["prop_leve"] = cestao["peso_leve"] / cestao["peso_t_total"]
-
-# Só carregamento 1 e 2 (onde existe is_carga_alta)
-bivariada = cestao[cestao["nu_carregamento"].isin([1, 2])].copy()
-bivariada["carga_alta"] = np.where(
-    bivariada["nu_carregamento"] == 1,
-    bivariada["cd_corrida"].map(resposta.set_index("cd_corrida")["is_carga_alta_carregamento_1"]),
-    bivariada["cd_corrida"].map(resposta.set_index("cd_corrida")["is_carga_alta_carregamento_2"]),
-)
-
-features_numericas = ["peso_t_total", "volume_m3_total", "num_camadas", "peso_leve", "peso_misto", "peso_pesado", "prop_leve"]
+features_numericas = ["peso_t_total", "volume_m3_total", "num_camadas", "num_materiais", "peso_leve", "peso_misto", "peso_pesado", "prop_leve"]
 
 # =====================================================================
-# 1) Boxplot + 2) point-biserial, pra cada feature nova
+# Boxplot + point-biserial, pra cada feature nova
 # =====================================================================
 resultados = []
 for feat in features_numericas:
@@ -1024,7 +752,7 @@ print("=== Point-biserial: feature x carga_alta ===")
 print(tabela_pb)
 
 # =====================================================================
-# 3) Heatmap de correlação (multicolinearidade)
+# Heatmap de correlação (multicolinearidade)
 # =====================================================================
 corr = bivariada[features_numericas + ["carga_alta"]].corr()
 fig, ax = plt.subplots(figsize=(8, 7))
@@ -1046,9 +774,143 @@ pares = pares[(pares < 1.0) & (pares > 0.6)]
 pares = pares[~pares.index.duplicated()]
 print(pares)
 
+# ---------- GRÁFICO 11 - Peso contra volume (carregamento 1)
+c1_pv = total[total["nu_carregamento"] == 1]
+correlacao = c1_pv["peso_t"].corr(c1_pv["volume_m3"])
+passou = (c1_pv["peso_t"] > 70) | (c1_pv["volume_m3"] > 78)
+
+fig, ax = plt.subplots(figsize=(7.5, 5.5))
+ax.scatter(c1_pv[~passou]["peso_t"], c1_pv[~passou]["volume_m3"], s=10, alpha=0.4, color=AZUL, label="dentro do limite")
+ax.scatter(c1_pv[passou]["peso_t"], c1_pv[passou]["volume_m3"], s=10, alpha=0.6, color=VERMELHO, label="excede peso ou volume")
+ax.axvline(70, color="black", linestyle="--", linewidth=1)
+ax.axhline(78, color="black", linestyle="--", linewidth=1)
+ax.set_xlabel("peso do cestão (t)")
+ax.set_ylabel("volume estimado (m³)")
+ax.set_title(
+    f"Peso X Volume (correlação {correlacao:.2f})".replace(".", ","),
+    loc="left", fontweight="bold", fontsize=11,
+)
+ax.legend()
+mostrar("11_peso_contra_volume")
+
+# ---------- Posição relativa de cada camada (usado nos gráficos 14 e 15)
+cestoes = cestoes.sort_values(["cd_corrida", "nu_carregamento", "nu_camada"])
+ultima_camada = cestoes.groupby(["cd_corrida", "nu_carregamento"])["nu_camada"].transform("max")
+cestoes["posicao"] = cestoes["nu_camada"] / ultima_camada
+cestoes["faixa"] = pd.cut(cestoes["posicao"], [0, 0.3, 0.7, 1.0], labels=["fundo", "meio", "topo"])
+
+# ---------- GRÁFICO 14 - Onde cada classe de material aparece no cestão
+tabela = pd.crosstab(cestoes["tp_material"], cestoes["faixa"], normalize="index") * 100
+tabela = tabela.reindex(["Pesado", "Misto", "Leve"])        # Leve fica embaixo no gráfico
+leve_meio = tabela.loc["Leve", "meio"]
+
+fig, ax = plt.subplots(figsize=(9, 4.2))
+esquerda = np.zeros(len(tabela))
+for faixa, cor in [("fundo", AZUL), ("meio", CINZA), ("topo", LARANJA)]:
+    ax.barh(tabela.index, tabela[faixa], left=esquerda, color=cor, label=faixa)
+    for i, valor in enumerate(tabela[faixa]):
+        ax.text(
+            esquerda[i] + valor / 2, i, f"{valor:.0f}%".replace(".", ","),
+            ha="center", va="center", color="white", fontweight="bold",
+        )
+    esquerda = esquerda + tabela[faixa].values
+ax.set_title(
+    "% dos materiais",
+    loc="left", fontweight="bold", fontsize=11,
+)
+ax.set_xlabel("% das linhas de cada classe")
+ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=3, frameon=False)
+ax.grid(False)
+mostrar("14_onde_cada_classe_aparece")
+
+# ---------- GRÁFICO 15 - Classe da camada de fundo e de topo
+classes_cestao = cestoes.groupby(["cd_corrida", "nu_carregamento"])["tp_material"]
+fundo = classes_cestao.first().value_counts(normalize=True) * 100
+topo = classes_cestao.last().value_counts(normalize=True) * 100
+resumo = pd.DataFrame({"Fundo": fundo, "Topo": topo}).fillna(0).T
+resumo = resumo.reindex(columns=["Leve", "Misto", "Pesado"]).fillna(0)
+
+fig, ax = plt.subplots(figsize=(7.5, 4.5))
+resumo.plot(kind="bar", ax=ax, color=[AZUL, CINZA, VERMELHO], rot=0, width=0.7)
+for barra in ax.patches:
+    if barra.get_height() > 0:
+        ax.text(
+            barra.get_x() + barra.get_width() / 2, barra.get_height() + 1.5,
+            f"{barra.get_height():.0f}%", ha="center",
+        )
+ax.set_title(
+    "Análise do material leve",
+    loc="left", fontweight="bold", fontsize=11,
+)
+ax.set_ylabel("% dos cestões")
+ax.set_ylim(0, 108)
+ax.legend(title="Classe da camada", frameon=False)
+mostrar("15_fundo_e_topo")
+
+# ---------- GRÁFICO 17 - Volume do cestão 2: com e sem carga alta
+c2_box = juntos[juntos["nu_carregamento"] == 2]
+sem = c2_box[c2_box["carga_alta"] == 0]["volume_m3"]
+com = c2_box[c2_box["carga_alta"] == 1]["volume_m3"]
+
+fig, ax = plt.subplots(figsize=(6.5, 4.8))
+caixas = ax.boxplot(
+    [sem, com], tick_labels=["sem carga alta", "com carga alta"],
+    patch_artist=True, showfliers=False,
+)
+for caixa, cor in zip(caixas["boxes"], [AZUL, VERMELHO]):
+    caixa.set_facecolor(cor)
+    caixa.set_alpha(0.6)
+ax.axhline(78, color="black", linestyle="--", linewidth=1)
+ax.text(1.5, 78.8, "78 m³", ha="center")
+ax.set_title(
+    "Cestão 2: volume médio",
+    loc="left", fontweight="bold", fontsize=11,
+)
+ax.set_ylabel("volume estimado (m³)")
+mostrar("17_volume_cestao2_com_e_sem_carga_alta")
+
+# ---------- GRÁFICO 18 - Carga alta por faixa de peso (carregamento 1) - PRÉVIA
+c1j = juntos[juntos["nu_carregamento"] == 1].copy()
+c1j["faixa_peso"] = pd.cut(c1j["peso_t"], [0, 50, 55, 60, 65, 70, np.inf], labels=["até 50 t", "50 a 55 t", "55 a 60 t", "60 a 65 t", "65 a 70 t", "acima de 70 t"])
+por_faixa = c1j.groupby("faixa_peso", observed=True)["carga_alta"].agg(["size", "mean"])
+media_geral = c1j["carga_alta"].mean() * 100
+
+fig, ax = plt.subplots(figsize=(9, 4.8))
+barras = ax.bar(por_faixa.index.astype(str), por_faixa["mean"] * 100, color=VERMELHO, alpha=0.85)
+rotulos = []
+for n, m in zip(por_faixa["size"], por_faixa["mean"]):
+    aviso = "\npoucos casos" if n < 100 else ""
+    rotulos.append(f"{pct(m * 100)}\n(n={br(n)}){aviso}")
+ax.bar_label(barras, labels=rotulos, padding=3, fontsize=9)
+ax.axhline(media_geral, color="black", linestyle="--", linewidth=1)
+ax.text(len(por_faixa) - 0.5, media_geral + 1, f"média: {pct(media_geral)}", ha="right")
+ax.set_ylim(0, por_faixa["mean"].max() * 100 * 1.25)
+ax.set_title(
+    "Carregamento 1: % de carga alta pelo peso do cestão",
+    loc="left", fontweight="bold", fontsize=11,
+)
+ax.set_xlabel("peso do cestão")
+ax.set_ylabel("% com carga alta")
+mostrar("18_carga_alta_por_faixa_de_peso")
+
+#%%
 # =====================================================================
-# 4) Padrões temporais: turno e dia da semana
+# Carregamento 1 x 2
 # =====================================================================
+print("\n=== Taxa de carga alta por carregamento ===")
+print(bivariada.groupby("nu_carregamento")["carga_alta"].agg(["mean", "count"]))
+
+
+# =====================================================================
+# ITEM 7 — PADRÕES TEMPORAIS
+# Taxa de carga alta por turno e por dia da semana.
+# =====================================================================
+# [NOTA] O turno usado abaixo (madrugada/manhã/tarde/noite, pd.cut) é
+# DIFERENTE do turno oficial do Guia da EVCOMX (Turno A 06h-14h, B
+# 14h-22h, C 22h-06h) - decidir se troca pra bater com o guia ou se
+# mantém e justifica a escolha na apresentação.
+
+#%%
 dt_local = bivariada["dt_inicio"].dt.tz_convert("America/Sao_Paulo")
 bivariada["turno"] = pd.cut(dt_local.dt.hour, [-1, 6, 12, 18, 24], labels=["madrugada", "manha", "tarde", "noite"])
 bivariada["dia_semana"] = dt_local.dt.day_name()
@@ -1058,18 +920,12 @@ print(bivariada.groupby("turno")["carga_alta"].agg(["mean", "count"]))
 print("\n=== Taxa de carga alta por dia da semana ===")
 print(bivariada.groupby("dia_semana")["carga_alta"].agg(["mean", "count"]))
 
-# =====================================================================
-# 5) Carregamento 1 x 2
-# =====================================================================
-print("\n=== Taxa de carga alta por carregamento ===")
-print(bivariada.groupby("nu_carregamento")["carga_alta"].agg(["mean", "count"]))
 
-bivariada.to_csv("features_cestao.csv", index=False)
-print("\nfeatures_cestao.csv atualizado com todas as features da bivariada.")
-
-# -----------------------------------------------------------------
-# 6) DICIONÁRIO DE MATERIAIS - ainda não foi explorado como o Guia pede
-# -----------------------------------------------------------------
+# =====================================================================
+# ITEM 8 — DICIONÁRIO DE MATERIAIS
+# Scatter Densidade x Energia Elétrica (colorido por Rendimento
+# Metálico) e verificação numérica da regra leve/pesado do guia.
+# =====================================================================
 # [ ] Scatter plot de Densidade (eixo X) x Energia Elétrica (eixo Y),
 #     colorido por Rendimento Metálico - o Guia (seção 3.2) pede esse
 #     gráfico especificamente pra "revelar a personalidade de cada
@@ -1081,7 +937,7 @@ print("\nfeatures_cestao.csv atualizado com todas as features da bivariada.")
 #     ou se tem exceção.
 # [ ] Separar explicitamente insumos (CAL, COQUE) dos materiais
 #     metálicos de verdade antes de qualquer conta de peso/volume (ver
-#     item 1).
+#     ITEM 2).
 
 #%%
 import pandas as pd
@@ -1133,106 +989,16 @@ print("\nOcorrências de CAL/COQUE no base.csv:",
 # foram usados em nenhuma corrida. O base.csv (join a partir de infos_camadas)
 # já exclui eles automaticamente, não precisa de ação adicional.
 
-# -----------------------------------------------------------------
-# 7) FECHAMENTO
-# -----------------------------------------------------------------
-# [ ] Depois de tudo acima decidido e feito, salvar um dataset
-#     consolidado (todas as features por corrida+carregamento + a
-#     variável resposta) num CSV separado - isso é o que vai alimentar
-#     a etapa de modelagem, e também é mais fácil de revisar com o
-#     grupo do que o notebook inteiro.
 
-
-#%%
-resposta_long = pd.concat([
-    resposta[["cd_corrida", "is_carga_alta_carregamento_1", "qt_segundos_duracao_parada_carregamento_1"]]
-        .rename(columns={"is_carga_alta_carregamento_1": "carga_alta", "qt_segundos_duracao_parada_carregamento_1": "duracao_parada_segundos"})
-        .assign(nu_carregamento=1),
-    resposta[["cd_corrida", "is_carga_alta_carregamento_2", "qt_segundos_duracao_parada_carregamento_2"]]
-        .rename(columns={"is_carga_alta_carregamento_2": "carga_alta", "qt_segundos_duracao_parada_carregamento_2": "duracao_parada_segundos"})
-        .assign(nu_carregamento=2),
-])
-
-dataset_modelagem = cestao[cestao["nu_carregamento"].isin([1, 2])].merge(
-    resposta_long, on=["cd_corrida", "nu_carregamento"], how="left"
-)
-
-dataset_modelagem.to_csv("dataset_modelagem.csv", index=False)
-print("dataset_modelagem.csv salvo com", len(dataset_modelagem), "linhas e", dataset_modelagem.shape[1], "colunas.")
-print(dataset_modelagem.columns.tolist())
+# =====================================================================
+# ITEM 9 — FECHAMENTO
+# =====================================================================
+# [ORGANIZAÇÃO] A célula que monta resposta_long, faz o merge final e
+# salva dataset_modelagem.csv já está na Parte A, bloco A.7.
+#
 # [ ] Escrever, em texto corrido (não só código/gráfico), as
 #     conclusões principais: qual(is) feature(s) mais se relaciona(m)
 #     com carga alta, o que os dados confirmam ou contradizem do que
 #     o Guia da EVCOMX já descreve (Efeito Mola, volume > peso como
 #     preditor, etc.), e quais limitações/vieses dos dados valem a
 #     pena mencionar pra EVCOMX.
-
-#%%
-base[base["dt_hora_consumo"].isnull()]["cd_codigo_material"].value_counts()
-# %%
-sem_hora_suspeito = base[base["dt_hora_consumo"].isnull() & (base["cd_codigo_material"] != "GUSL")]
-
-print(sem_hora_suspeito[["cd_corrida", "nu_carregamento", "cd_codigo_material", "cd_baia"]])
-print(sem_hora_suspeito["nu_carregamento"].value_counts())
-print(sem_hora_suspeito["cd_baia"].value_counts())
-
-# %%
-sem_hora_suspeito["cd_corrida"].nunique()
-sem_hora_suspeito["cd_corrida"].value_counts()
-
-# %%
-# Pega as corridas que têm pelo menos uma linha "suspeita" (sem hora, material sólido)
-corridas_suspeitas = sem_hora_suspeito["cd_corrida"].unique()
-
-# Para essas corridas, pega a hora das OUTRAS linhas (que têm hora registrada)
-aproximado = base[
-    base["cd_corrida"].isin(corridas_suspeitas) & base["dt_hora_consumo"].notnull()
-]
-
-# Menor horário registrado por corrida = aproximação de quando ela aconteceu
-data_aproximada_por_corrida = aproximado.groupby("cd_corrida")["dt_hora_consumo"].min().sort_values()
-
-print(data_aproximada_por_corrida)
-# %%
-sem_hora_suspeito["cd_corrida"].value_counts()
-# %%
-total_por_corrida = base[
-    base["cd_corrida"].isin(corridas_suspeitas) & base["nu_carregamento"].isin([1, 2])
-].groupby("cd_corrida").size()
-
-sem_hora_por_corrida = sem_hora_suspeito["cd_corrida"].value_counts()
-
-comparacao = pd.DataFrame({
-    "total_linhas_sólidas": total_por_corrida,
-    "sem_hora": sem_hora_por_corrida
-})
-comparacao["pct_sem_hora"] = (comparacao["sem_hora"] / comparacao["total_linhas_sólidas"] * 100).round(1)
-
-print(comparacao.sort_values("pct_sem_hora", ascending=False))
-# %%
-# Para cada uma dessas 13 corridas, compara quantas linhas de cada carregamento
-# têm hora faltando, em relação ao total de linhas daquele carregamento
-detalhe = base[
-    base["cd_corrida"].isin(corridas_suspeitas) & base["nu_carregamento"].isin([1, 2])
-].copy()
-detalhe["sem_hora"] = detalhe["dt_hora_consumo"].isnull()
-
-tabela = detalhe.groupby(["cd_corrida", "nu_carregamento"])["sem_hora"].agg(["sum", "count"])
-tabela["pct"] = (tabela["sum"] / tabela["count"] * 100).round(1)
-print(tabela)
-# %%
-afetados = base[
-    base["cd_corrida"].isin(corridas_suspeitas)
-    & base["nu_carregamento"].isin([1, 2])
-    & base["dt_hora_consumo"].isnull()
-]
-print(afetados["qt_peso_carregamento"].describe())
-print("Linhas com peso também zerado/ausente:", (afetados["qt_peso_carregamento"].isnull() | (afetados["qt_peso_carregamento"] == 0)).sum())
-# %%
-afetados = base[
-    base["cd_corrida"].isin(corridas_suspeitas)
-    & base["nu_carregamento"].isin([1, 2])
-    & base["dt_hora_consumo"].isnull()
-]
-print(afetados["qt_peso_carregamento"].describe())
-# %%
