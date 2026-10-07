@@ -22,7 +22,7 @@ Os dois arquivos usam marcadores `#%%`, então também dá pra rodar célula por
 
 - `base.csv` — `infos_camadas` + `infos_materiais` + `dicionario_tipo_material` unidos (bloco A.0), já limpo (cd_baia, dt_hora_consumo, peso zero, Densidade/Rendimento como número) e com as colunas `peso_t` e `volume_m3`.
 - `dataset_modelagem.csv` — uma linha por cestão (corrida + carregamento 1 ou 2), com as features agregadas (peso, volume, número de camadas, proporção de material leve) e a variável resposta (`carga_alta`). É o dataset pronto pra modelagem.
-- `cestoes_acima_do_limite.csv` — gerado pela Parte B (ITEM 1), lista os cestões que passam da capacidade física (70 t ou 78 m³). **Ainda em avaliação** — ver nota abaixo.
+- `cestoes_acima_do_limite.csv` — gerado pela Parte B (ITEM 1), lista os cestões que passam da capacidade física (70 t ou 78 m³). Ideia do Lucas; o grupo decidiu **manter** — serve como lista operacional, propósito diferente do gráfico-resumo (Gráfico 10, ITEM 2).
 - `graficos/` — todos os PNGs gerados pela Parte B.
 
 ### Estrutura da `EDA.py` (Parte B)
@@ -35,7 +35,7 @@ Organizada pelos itens do checklist de EDA do bootcamp:
 | 2 — Qualidade dos dados | nulos, duplicatas, peso zerado, consistência da variável resposta, gráficos-resumo dos problemas |
 | 3 — Análise univariada | taxa de carga alta, carregamentos por tipo, duração das paradas, propriedades por material |
 | 4 — Outliers | regra de negócio (capacidade física) x critério estatístico (IQR) |
-| 5 — Features criadas | num_camadas, peso por classe, prop_leve |
+| 5 — Features criadas | num_camadas, num_materiais, peso por classe, prop_leve |
 | 6 — Análise bivariada | point-biserial, heatmap de correlação, peso x volume, posição da camada, comparação carregamento 1 x 2 |
 | 7 — Padrões temporais | taxa de carga alta por turno e dia da semana |
 | 8 — Dicionário de materiais | scatter densidade x energia, verificação da regra leve/pesado |
@@ -43,12 +43,12 @@ Organizada pelos itens do checklist de EDA do bootcamp:
 
 ### Decisões já tomadas (documentadas no código)
 
-- **Outliers MANTIDOS!**, não removidos — ficam marcados em duas flags (`acima_capacidade`, regra de negócio; `outlier_estatistico`, critério IQR), porque a maioria dos outliers estatísticos no carregamento 2 são cestões pesados legítimos, não erro de medição.
+- **Outliers são mantidos**, não removidos — ficam marcados em duas flags (`acima_capacidade`, regra de negócio; `outlier_estatistico`, critério IQR), porque a maioria dos outliers estatísticos no carregamento 2 são cestões pesados legítimos, não erro de medição.
+- **`num_materiais`** (quantos códigos de material diferentes entram no cestão) **foi incluída** como feature, como o Guia sugere (seção 8.2) — entra no `dataset_modelagem.csv` e na análise bivariada (point-biserial, boxplot, heatmap).
 - O turno usado (madrugada/manhã/tarde/noite) é **diferente** do turno oficial da EVCOMX (Turno A/B/C) — decidir se troca ou se mantém e justifica na apresentação.
 
 ### Pontos ainda em aberto
 
-- `cestoes_acima_do_limite.csv`: ideia do Lucas, uso ainda não confirmado (lista operacional x redundante com o gráfico de resumo) — decidir com ele antes de cortar ou manter de vez.
 - Propriedades de RECC/RECG (sem densidade/energia/rendimento no dicionário): aguardando resposta do cliente.
 - 28 linhas com chave corrida+carregamento+camada repetida: precisa investigar antes de decidir o que fazer.
 - Escrever o fechamento (ITEM 9): principais conclusões, o que confirma ou contradiz o que o Guia da EVCOMX já descreve, e limitações dos dados a reportar pra EVCOMX.
