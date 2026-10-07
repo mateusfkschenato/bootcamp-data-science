@@ -16,7 +16,6 @@
 #   ITEM 6 - Análise bivariada
 #   ITEM 7 - Padrões temporais
 #   ITEM 8 - Dicionário de materiais
-#   ITEM 9 - Fechamento
 # =====================================================================
 #%%
 import os
@@ -642,7 +641,7 @@ bivariada["dt_inicio"] = pd.to_datetime(bivariada["dt_inicio"], utc=True)
 features_numericas = ["peso_t_total", "volume_m3_total", "num_camadas", "num_materiais", "peso_leve", "peso_misto", "peso_pesado", "prop_leve"]
 
 # =====================================================================
-# Gera o gráfico do: Boxplot + point-biserial, pra cada feature nova
+# Gera o gráfico de: Boxplot e point-biserial, pra cada feature nova
 # =====================================================================
 resultados = []
 for feat in features_numericas:
@@ -680,11 +679,17 @@ plt.tight_layout()
 plt.savefig("graficos/heatmap_correlacao.png", dpi=130)
 plt.close()
 
-print("\n=== Pares de features com |correlação| > 0.6 (multicolinearidade) ===")
+print("\n=== Pares de features com | correlação | > 0.6 ===")
 pares = corr.abs().unstack().sort_values(ascending=False)
 pares = pares[(pares < 1.0) & (pares > 0.6)]
 pares = pares[~pares.index.duplicated()]
 print(pares)
+ 
+print("\n=== Top 10 pares de features mais correlacionadas ===")
+pares_top10 = corr.abs().unstack().sort_values(ascending=False)
+pares_top10 = pares_top10[pares_top10 < 1.0]   # tira a diagonal (correlação de cada feature com ela mesma)
+pares_top10 = pares_top10[~pares_top10.index.duplicated()]
+print(pares_top10.head(10))
 
 # ---------- GRÁFICO 11 - Peso contra volume (carregamento 1)
 c1_pv = total[total["nu_carregamento"] == 1]
@@ -900,17 +905,3 @@ print("\nOcorrências de CAL/COQUE no base.csv:",
 # Esperado: 0 - esses códigos existem só no dicionário de materiais, nunca
 # foram usados em nenhuma corrida. O base.csv (join a partir de infos_camadas)
 # já exclui eles automaticamente, não precisa de ação adicional.
-
-
-# =====================================================================
-# ITEM 9 — FECHAMENTO
-# =====================================================================
-# [ORGANIZAÇÃO] A célula que monta resposta_long, faz o merge final e
-# salva dataset_modelagem.csv já está na Parte A, bloco A.7.
-#
-# [ ] Escrever, em texto corrido (não só código/gráfico), as
-#     conclusões principais: qual(is) feature(s) mais se relaciona(m)
-#     com carga alta, o que os dados confirmam ou contradizem do que
-#     o Guia da EVCOMX já descreve (Efeito Mola, volume > peso como
-#     preditor, etc.), e quais limitações/vieses dos dados valem a
-#     pena mencionar pra EVCOMX.
