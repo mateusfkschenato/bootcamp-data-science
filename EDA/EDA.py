@@ -169,34 +169,7 @@ base[base["Rendimento Metálico %"].isnull()]
 # -----------------------------------------------------------------
 # 1) LIMPEZA DE FATO - decisões sobre cada nulo/duplicata/peso zero
 # -----------------------------------------------------------------
-# [ ] cd_baia e dt_hora_consumo nulos: já sabemos que é 100% GUSL
-#     (gusa líquido, não vem de baia nem tem hora de "consumo" de
-#     sucata). Decidir: mantém o nulo (é estrutural, não é erro) ou
-#     preenche com algum marcador tipo "N/A - gusa líquido"? Documentar
-#     a decisão e o porquê.
 
-# [ORGANIZAÇÃO] A célula de limpeza de cd_baia/dt_hora_consumo que
-# estava aqui foi movida pra Parte A, bloco A.1.
-
-# [ ] Metálico, Energia Elétrica, Densidade t/m3, Rendimento Metálico %
-#     nulos: isso acontece pra linhas cujo cd_codigo_material não bate
-#     com nenhum material do dicionário (RECG, RECC, e também os
-#     insumos CAL/COQUE, que têm código mas não têm essas propriedades
-#     por não serem sucata metálica). Decidir, pra cada caso:
-#       - RECG/RECC: dá pra conseguir a densidade/energia/rendimento
-#         de outra forma (perguntar pro cliente, assumir valor de um
-#         material parecido)? Ou essas linhas ficam de fora de contas
-#         que dependem de volume_m3 (já que volume = peso/densidade
-#         não dá pra calcular sem densidade)?
-#       - CAL/COQUE (insumos): confirmar se eles devem ENTRAR na conta
-#         de peso/volume do cestão ou se devem ser removidos antes de
-#         calcular peso_t e volume_m3 por cestão (o guia oficial trata
-#         eles como "insumos", não como sucata metálica - então
-#         provavelmente não deveriam contar no peso que define carga
-#         alta, mas isso precisa ser confirmado e registrado).
-#
-# [ ] As 2 linhas 100% duplicadas: decidir se remove ou investiga se
-#     são duas corridas reais que coincidem em tudo.
 
 #%%
 dup_total = base[base.duplicated(keep=False)]
@@ -819,18 +792,6 @@ print(bivariada.groupby("dia_semana")["carga_alta"].agg(["mean", "count"]))
 # Scatter Densidade x Energia Elétrica (colorido por Rendimento
 # Metálico) e verificação numérica da regra leve/pesado do guia.
 # =====================================================================
-# [ ] Scatter plot de Densidade (eixo X) x Energia Elétrica (eixo Y),
-#     colorido por Rendimento Metálico - o Guia (seção 3.2) pede esse
-#     gráfico especificamente pra "revelar a personalidade de cada
-#     tipo de sucata".
-# [ ] Confirmar com números a relação: materiais leves têm densidade
-#     baixa (< 0,55 t/m³) e rendimento alto (> 0,90); materiais pesados
-#     têm densidade alta (> 2,50 t/m³). O Guia já antecipa esse
-#     resultado (seção 3.3) - vale conferir se os dados batem com isso
-#     ou se tem exceção.
-# [ ] Separar explicitamente insumos (CAL, COQUE) dos materiais
-#     metálicos de verdade antes de qualquer conta de peso/volume (ver
-#     ITEM 2).
 
 #%%
 import pandas as pd
@@ -878,6 +839,3 @@ print(pesado[pesado["Densidade t/m3"] <= 2.50][["cd_codigo_material", "Densidade
 # ---------- Insumos CAL/COQUE: já resolvido, só documentando ----------
 print("\nOcorrências de CAL/COQUE no base.csv:",
       base["cd_codigo_material"].isin(["7071955", "8800022", "7071940"]).sum())
-# Esperado: 0 - esses códigos existem só no dicionário de materiais, nunca
-# foram usados em nenhuma corrida. O base.csv (join a partir de infos_camadas)
-# já exclui eles automaticamente, não precisa de ação adicional.

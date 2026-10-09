@@ -20,7 +20,7 @@
 
 
 # -----------------------------------------------------------------
-# A.0) Construção da base.csv a partir dos 4 arquivos brutos
+# A.0a) Construção da base.csv a partir dos 4 arquivos brutos
 # -----------------------------------------------------------------
 # =====================================================================
 #%%
@@ -38,40 +38,10 @@ base = base.merge(dicionario_tipo_material, on="cd_codigo_material", how="left")
 
 # -----------------------------------------------------------------
 # A.0b) Propriedades estimadas para RECC e RECG (sem correspondência
-# em infos_materiais.csv)
+# em infos_materiais.csv). Pesquisado pelo Lucas
 # -----------------------------------------------------------------
 # =====================================================================
-# RECC (RECUPERADA DE ESCORIA C) e RECG (RECUPERADA DE GUSA) não têm
-# nenhuma linha em infos_materiais.csv, então ficam sem Densidade,
-# Energia Elétrica e Rendimento Metálico depois do merge acima - o que
-# por sua vez impede o cálculo de volume_m3 pra essas linhas.
-#
-# NÃO são valores oficiais da EVCOMX - são uma ESTIMATIVA levantada
-# pelo grupo (pesquisa de terceiros, sem uma fonte única e explícita
-# por trás dos números). Fica marcado com a flag `propriedades_estimadas`
-# pra deixar rastreável e permitir excluir essas linhas de contas mais
-# sensíveis, se o grupo decidir.
-#
-# ATENÇÃO - conferir antes de confiar no valor do gusa: uma monografia
-# (UFOP) encontrada separadamente cita densidade do gusa entre 6,8 e
-# 7,2 t/m³ - bem mais alto que o 2,8 usado abaixo. A explicação mais
-# provável é que o valor abaixo seja densidade APARENTE (como o
-# material fica empilhado no cestão, com vão de ar entre pedaços), não
-# a densidade do metal maciço - isso é consistente com o que já está
-# no dicionário: GUSS (gusa sólido) tem 3,00 t/m³, enquanto GUSL (gusa
-# líquido, sem vão de ar) tem 7,40 t/m³. Como RECG é sucata sólida
-# recuperada (mais parecida com GUSS que com GUSL), um valor perto de
-# 3,00 faz mais sentido físico pro cálculo de volume do cestão do que
-# 7,0+. Mesmo assim, ESTE AINDA É UM VALOR ESTIMADO, não confirmado
-# pela EVCOMX - documentar como limitação (Guia, seção 10.1) e, se
-# possível, confirmar com o cliente antes da entrega final.
-# =====================================================================
-# OBS: Densidade e Rendimento vão como TEXTO com vírgula decimal
-# ("2,6", não 2.6) de propósito - a coluna já vem do CSV como texto
-# (algumas linhas têm "CAL"/"COQUE" nela, pros insumos), então o
-# pandas trata a coluna inteira como string e recusa receber um float
-# direto. A conversão pra número de verdade só acontece depois, no
-# bloco A.4, igual pra todas as linhas.
+
 propriedades_estimadas_dict = {
     "RECC": {"Energia Elétrica": 400, "Densidade t/m3": "2,6", "Rendimento Metálico %": "0,70"},
     "RECG": {"Energia Elétrica": 370, "Densidade t/m3": "2,8", "Rendimento Metálico %": "0,80"},
