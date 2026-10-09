@@ -4,10 +4,10 @@
 # Parte B (eda_analise.py/EDA.py) não guarda mais nada em memória vindo
 # daqui: cada execução começa do zero e troca informação por arquivo.
 #
-# Rode este arquivo PRIMEIRO, do início ao fim, antes do EDA.py (Parte
+# Rodar este arquivo PRIMEIRO, do início ao fim, antes do EDA.py (Parte
 # B). Ele parte dos 4 arquivos brutos do projeto (infos_camadas.csv,
 # infos_materiais.csv, dicionario_tipo_material.csv, VariavelResposta.csv)
-# e produz/atualiza, em disco:
+# e produz:
 #   - base.csv            (construído do zero no bloco A.0, depois
 #                           limpo e com as colunas novas: cd_baia,
 #                           dt_hora_consumo_estimada, peso_estimado,
