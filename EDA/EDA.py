@@ -9,7 +9,7 @@
 #
 # A Parte B está organizada pelos itens do checklist da nossa EDA, nesta ordem:
 #   ITEM 1 - Entender os dados
-#   ITEM 2 - Qualidade dos dados (Limpeza)
+#   ITEM 2 - Qualidade dos dados
 #   ITEM 3 - Análise univariada
 #   ITEM 4 - Outliers
 #   ITEM 5 - Features criadas
@@ -212,24 +212,11 @@ print("Linha no arquivo CSV:", [i + 2 for i in dup_total.index.tolist()])
 #     diferentes?). Precisa investigar essas 28 linhas especificamente
 #     antes de decidir o que fazer.
 #
-# [ ] As 2030 linhas com peso = 0: decidir se é erro de registro
-#     (remover), camada cancelada (remover ou manter como categoria
-#     própria) ou outra coisa. Isso é MUITA linha pra simplesmente
-#     ignorar sem entender a causa.
-
-# [ORGANIZAÇÃO] A célula que imputa o peso zero pela mediana do
-# material foi movida pra Parte A, bloco A.3.
-#
 # [ ] Depois de decidir tudo isso, documentar num resumo tipo "decisão
 #     de limpeza": coluna / problema / decisão / justificativa. É isso
 #     que os avaliadores querem ver (Guia, seção 10.1: "Visão crítica -
 #     identificar limitações dos dados").
 
-# -----------------------------------------------------------------
-# Configuração comum dos gráficos (usada por este item e pelos itens
-# 3 e 6 mais abaixo - leitura de base/resposta, funções mostrar/br/
-# pct, cores e pasta de saída). Só precisa rodar uma vez.
-# -----------------------------------------------------------------
 #%%
 import os
 import numpy as np
@@ -583,13 +570,7 @@ so_estatistico["tipo"] = np.where(
 )
 
 print(so_estatistico.groupby(["nu_carregamento", "tipo"]).size())
-# [DECISÃO JÁ TOMADA, documentada na conversa com o Claude]: outliers
-# são MANTIDOS, não removidos. acima_capacidade e outlier_estatistico
-# ficam como flags; a maioria dos outliers estatísticos do carregamento
-# 2 (259 de 263) são cestões pesados legítimos, dentro da capacidade,
-# não erro de medição - remover jogaria fora justamente os casos mais
-# próximos do limite, que são os mais relevantes pra carga alta.
-
+# A decisão de limpeza (Parte A, bloco A.3) foi imputar o peso zero pela mediana do material, então não há mais outlier extremo baixo (peso muito abaixo da mediana). O que sobra são os cestões com peso muito acima da mediana, mas ainda dentro da capacidade - isso é aceitável, não é erro de registro.
 
 # =====================================================================
 # ITEM 5 — FEATURES CRIADAS
@@ -679,11 +660,6 @@ plt.tight_layout()
 plt.savefig("graficos/heatmap_correlacao.png", dpi=130)
 plt.close()
 
-print("\n=== Pares de features com | correlação | > 0.6 ===")
-pares = corr.abs().unstack().sort_values(ascending=False)
-pares = pares[(pares < 1.0) & (pares > 0.6)]
-pares = pares[~pares.index.duplicated()]
-print(pares)
  
 print("\n=== Top 10 pares de features mais correlacionadas ===")
 pares_top10 = corr.abs().unstack().sort_values(ascending=False)
