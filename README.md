@@ -7,4 +7,3 @@ Teresa Bauer (Engenharia Elétrica)
 
 ## Professor:
 Fabrício Leal (Fundo Amanhã | Diretor Executivo & Vice-presidente)
-
