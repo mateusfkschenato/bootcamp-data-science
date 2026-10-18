@@ -10,7 +10,8 @@
 # e produz:
 #   - base.csv            (construído do zero no bloco A.0, depois
 #                           limpo e com as colunas novas: cd_baia,
-#                           dt_hora_consumo_estimada, peso_estimado,
+#                           dt_hora_consumo_estimada, sem as camadas
+#                           de peso zero,
 #                           Densidade/Rendimento como número, peso_t,
 #                           volume_m3)
 #   - dataset_modelagem.csv  (uma linha por cestão, com as features
@@ -156,35 +157,35 @@ print("base.csv atualizado e salvo.")
 
 
 # -----------------------------------------------------------------
-# A.3) Imputação do peso zero pela mediana do material
+# A.3) Remoção das camadas com peso zero
 # -----------------------------------------------------------------
+# DECISÃO REVISTA após a apresentação para a EVCOMX (out/2026):
+# antes imputávamos o peso zero pela mediana do material. Isso estava
+# ERRADO. Segundo a EVCOMX, peso zero significa que a camada estava na
+# "receita" do cestão, mas o gancho não pegou o material - ou seja, a
+# camada NUNCA entrou no cestão. Imputar a mediana colocava no cestão
+# material que não existia (em média +2,3 t em 40% dos cestões).
+# Correto: remover essas linhas. Elas não são dado faltante, são
+# camadas que não aconteceram.
 #%%
 import pandas as pd
 
 base = pd.read_csv("base.csv")
 
-# Mediana de peso por material, calculada só com as linhas que têm peso real (>0)
-mediana_por_material = (
-    base.loc[base["qt_peso_carregamento"] > 0]
-    .groupby("cd_codigo_material")["qt_peso_carregamento"]
-    .median()
-)
-
-# Linhas com problema de pesagem (peso registrado como zero)
 mascara_zero = base["qt_peso_carregamento"] == 0
+print("Camadas com peso zero (removidas):", mascara_zero.sum())
+print("  por carregamento:", base.loc[mascara_zero, "nu_carregamento"].value_counts().sort_index().to_dict())
+print("  cestões afetados:", base.loc[mascara_zero, ["cd_corrida", "nu_carregamento"]].drop_duplicates().shape[0])
 
-# Coluna de controle: True só nas linhas onde o peso foi estimado
-# (não é um dado medido de verdade)
-base["peso_estimado"] = False
-
-# Substitui o peso zero pela mediana do material e marca a flag
-base.loc[mascara_zero, "qt_peso_carregamento"] = base.loc[mascara_zero, "cd_codigo_material"].map(mediana_por_material)
-base.loc[mascara_zero, "peso_estimado"] = True
+base = base.loc[~mascara_zero].reset_index(drop=True)
 
 # ---------- Conferência ----------
-print("Linhas marcadas como peso_estimado:", base["peso_estimado"].sum())
 print("Peso zero restante:", (base["qt_peso_carregamento"] == 0).sum())
-print("Peso nulo (sem mediana p/ imputar):", base["qt_peso_carregamento"].isnull().sum())
+# Ainda existem camadas com peso muito baixo (ex.: 10 kg). NÃO foram
+# removidas: não são zero, então em princípio o material entrou. Vale
+# confirmar com a EVCOMX se 10 kg também é "gancho que não pegou".
+print("Camadas com peso entre 0 e 100 kg (mantidas):",
+      ((base["qt_peso_carregamento"] > 0) & (base["qt_peso_carregamento"] < 100)).sum())
 
 # ---------- Salvar ----------
 base.to_csv("base.csv", index=False)

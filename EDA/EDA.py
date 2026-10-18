@@ -119,8 +119,13 @@ colunas_chave = ["cd_corrida", "nu_carregamento", "nu_camada"]
 print("Mesma corrida/carregamento/camada repetida:", base.duplicated(colunas_chave).sum())
 
 # %% PASSO 12 - Peso zerado
-peso_zero = base[base["qt_peso_carregamento"] == 0]
-print("Linhas com peso 0:", len(peso_zero))
+# O base.csv já vem SEM essas linhas (Parte A, bloco A.3 remove), então
+# a investigação é feita no arquivo bruto.
+# Explicação da EVCOMX: peso zero = a camada estava na receita, mas o
+# gancho não pegou o material. A camada nunca entrou no cestão.
+camadas_brutas = pd.read_csv("infos_camadas.csv", na_values=["null"])
+peso_zero = camadas_brutas[camadas_brutas["qt_peso_carregamento"] == 0]
+print("Linhas com peso 0 no bruto (removidas na Parte A):", len(peso_zero))
 print(peso_zero["nu_carregamento"].value_counts())
 
 # %% PASSO 14 - A variável resposta está consistente?
@@ -312,7 +317,7 @@ flag_c2_sem_c2 = (
 ).sum()
 
 problemas = {
-    "Peso = 0 (linhas)": (base["qt_peso_carregamento"] == 0).sum(),
+    "Peso = 0, removidas (linhas)": (pd.read_csv("infos_camadas.csv", na_values=["null"])["qt_peso_carregamento"] == 0).sum(),
     "Cestões acima de 70 t ou 78 m³ (cestões)": excedem,
     "Sem horário, fora do GUSL (linhas)": (base["dt_hora_consumo"].isnull() & ~eh_gusl).sum(),
     "Carreg. 3 com sucata, não GUSL (linhas)": ((base["nu_carregamento"] == 3) & ~eh_gusl).sum(),
@@ -481,10 +486,11 @@ print(num_camadas.groupby("nu_carregamento")["num_camadas"].describe())
 # muito fora do padrão (ex: muito mais leve que a média) - isso é
 # candidato a outlier ESTATÍSTICO, não é a mesma coisa.
 #
-# OBS: o item "peso = 0" não é tratado aqui - já foi resolvido na
-# seção de limpeza de fato (ITEM 2), com imputação pela mediana do
-# material (coluna peso_estimado). Como esses valores já foram
-# substituídos, eles não aparecem mais como outlier extremo baixo.
+# OBS: o item "peso = 0" não é tratado aqui - essas camadas foram
+# REMOVIDAS na Parte A (bloco A.3), porque, segundo a EVCOMX, são
+# camadas que estavam na receita mas o gancho não pegou o material
+# (nunca entraram no cestão). Antes elas eram imputadas pela mediana do
+# material, o que estava errado.
 
 #%%
 import pandas as pd
@@ -543,7 +549,7 @@ so_estatistico["tipo"] = np.where(
 )
 
 print(so_estatistico.groupby(["nu_carregamento", "tipo"]).size())
-# A decisão de limpeza (Parte A, bloco A.3) foi imputar o peso zero pela mediana do material, então não há mais outlier extremo baixo (peso muito abaixo da mediana). O que sobra são os cestões com peso muito acima da mediana, mas ainda dentro da capacidade - isso é aceitável, não é erro de registro.
+# As camadas de peso zero foram removidas na Parte A (bloco A.3), então o peso de cada cestão agora é só o que de fato entrou. Confira a saída acima: cestões "muito abaixo da mediana" que aparecerem aqui são cestões realmente leves (pouca coisa pegou no gancho), não erro de registro.
 
 # =====================================================================
 # ITEM 5 — FEATURES CRIADAS
@@ -661,9 +667,19 @@ mostrar("04_peso_contra_volume")
 
 # ---------- Posição relativa de cada camada (usado nos gráficos 14 e 15)
 cestoes = cestoes.sort_values(["cd_corrida", "nu_carregamento", "nu_camada"])
-ultima_camada = cestoes.groupby(["cd_corrida", "nu_carregamento"])["nu_camada"].transform("max")
-cestoes["posicao"] = cestoes["nu_camada"] / ultima_camada
+# Usa a ORDEM da camada no cestão (1ª, 2ª, ...), não o número nu_camada:
+# depois de remover as camadas de peso zero a numeração fica com buracos.
+ordem = cestoes.groupby(["cd_corrida", "nu_carregamento"]).cumcount() + 1
+total_camadas = cestoes.groupby(["cd_corrida", "nu_carregamento"])["nu_camada"].transform("size")
+cestoes["posicao"] = ordem / total_camadas
 cestoes["faixa"] = pd.cut(cestoes["posicao"], [0, 0.3, 0.7, 1.0], labels=["fundo", "meio", "topo"])
+
+# ATENÇÃO (correção da EVCOMX, out/2026): a ordem leve -> pesado -> misto
+# -> leve NÃO acontece uma vez só por cestão (leve no fundo, pesado/misto
+# no meio, leve no topo). Ela se REPETE em vários ciclos dentro do mesmo
+# cestão. Por isso os gráficos 07 e 08 só descrevem onde cada classe cai
+# e o que está nas pontas; eles NÃO testam a regra de montagem. Quem
+# analisa a regra são os gráficos 12 e 13, logo abaixo.
 
 # ---------- GRÁFICO 14 - Onde cada classe de material aparece no cestão
 tabela = pd.crosstab(cestoes["tp_material"], cestoes["faixa"], normalize="index") * 100
@@ -712,6 +728,76 @@ ax.set_ylabel("% dos cestões")
 ax.set_ylim(0, 108)
 ax.legend(title="Classe da camada", frameon=False)
 mostrar("08_fundo_e_topo")
+
+# =====================================================================
+# Ciclos de montagem (leve -> pesado -> misto -> leve se repetindo)
+# =====================================================================
+# Cada cestão vira uma sequência de BLOCOS: camadas seguidas da mesma
+# classe viram um bloco só (ex.: L L P P M M M P M L -> L P M P M L).
+# Como cada ciclo de montagem tem UM bloco de pesado, contamos os ciclos
+# pelo número de blocos de pesado ("n_ciclos").
+# Obs.: nos dados aparecem tanto L->P->M quanto L->M->P (e o miolo
+# costuma alternar P M P M...). Vale confirmar com a EVCOMX se as duas
+# ordens são aceitas como "ciclo".
+SIGLA = {"Leve": "L", "Pesado": "P", "Misto": "M"}
+
+def blocos(classes):
+    """['Leve','Leve','Pesado',...] -> 'LP...' (uma letra por bloco)."""
+    letras = [SIGLA[c] for c in classes]
+    return "".join(l for i, l in enumerate(letras) if i == 0 or l != letras[i - 1])
+
+seq = (
+    cestoes.groupby(["cd_corrida", "nu_carregamento"])["tp_material"]
+    .apply(blocos).rename("sequencia_blocos").reset_index()
+)
+seq["n_blocos"] = seq["sequencia_blocos"].str.len()
+seq["n_ciclos"] = seq["sequencia_blocos"].str.count("P")
+seq = seq.merge(juntos[["cd_corrida", "nu_carregamento", "carga_alta"]], on=["cd_corrida", "nu_carregamento"])
+
+print("\n=== Sequências de blocos mais comuns ===")
+print(seq["sequencia_blocos"].value_counts().head(10))
+print("\n=== Transições entre blocos (linha = bloco atual, coluna = próximo) ===")
+pares = [(s[i], s[i + 1]) for s in seq["sequencia_blocos"] for i in range(len(s) - 1)]
+print(pd.crosstab(pd.Series([a for a, _ in pares], name="atual"),
+                  pd.Series([b for _, b in pares], name="próximo")))
+
+# ---------- GRÁFICO 12 - A sequência real das camadas (amostra de cestões)
+COR_CLASSE = {"Leve": AZUL, "Misto": CINZA, "Pesado": VERMELHO}
+amostra = (cestoes[cestoes["nu_carregamento"] == 1]
+           [["cd_corrida"]].drop_duplicates().sample(25, random_state=42)["cd_corrida"])
+fig, ax = plt.subplots(figsize=(10, 6))
+for i, corrida in enumerate(amostra):
+    camadas_c = cestoes[(cestoes["cd_corrida"] == corrida) & (cestoes["nu_carregamento"] == 1)]
+    for j, classe in enumerate(camadas_c["tp_material"]):
+        ax.barh(i, 1, left=j, color=COR_CLASSE[classe], edgecolor="white")
+ax.set_yticks(range(len(amostra)))
+ax.set_yticklabels(amostra, fontsize=7)
+ax.set_xlabel("ordem da camada no cestão (1ª camada = fundo)")
+ax.set_title("Cestão 1: a sequência leve / pesado / misto se repete", loc="left", fontweight="bold", fontsize=11)
+ax.legend(handles=[plt.Rectangle((0, 0), 1, 1, color=c) for c in COR_CLASSE.values()],
+          labels=list(COR_CLASSE.keys()), loc="upper center", bbox_to_anchor=(0.5, -0.1), ncol=3, frameon=False)
+ax.grid(False)
+mostrar("12_sequencia_das_camadas")
+
+# ---------- GRÁFICO 13 - Carga alta por número de ciclos no cestão
+seq["faixa_ciclos"] = pd.cut(seq["n_ciclos"], [-1, 1, 2, 4, 99], labels=["0 ou 1", "2", "3 ou 4", "5 ou mais"])
+por_ciclo = (seq.groupby(["nu_carregamento", "faixa_ciclos"], observed=False)["carga_alta"]
+             .agg(["size", "mean"]).reset_index())
+print("\n=== Carga alta por número de ciclos ===")
+print(por_ciclo)
+
+fig, axes = plt.subplots(1, 2, figsize=(11, 4.5), sharey=True)
+for ax, carreg, cor in zip(axes, [1, 2], [AZUL, LARANJA]):
+    dados = por_ciclo[por_ciclo["nu_carregamento"] == carreg]
+    barras = ax.bar(dados["faixa_ciclos"].astype(str), dados["mean"] * 100, color=cor)
+    ax.bar_label(barras, labels=[f"{pct(m * 100)}\n(n={br(int(n))})" for n, m in zip(dados["size"], dados["mean"])],
+                 padding=3, fontsize=9)
+    ax.set_title(f"Carregamento {carreg}", loc="left", fontweight="bold", fontsize=11)
+    ax.set_xlabel("ciclos no cestão (blocos de pesado)")
+axes[0].set_ylabel("% com carga alta")
+axes[0].set_ylim(0, por_ciclo["mean"].max() * 100 * 1.3)
+fig.suptitle("Mais ciclos de montagem, menos carga alta", x=0.01, ha="left", fontweight="bold", fontsize=11)
+mostrar("13_carga_alta_por_ciclos")
 
 # ---------- GRÁFICO: - Volume do cestão 2: com e sem carga alta
 c2_box = juntos[juntos["nu_carregamento"] == 2]

@@ -20,7 +20,7 @@ Os dois arquivos usam marcadores `#%%`, então também dá pra rodar célula por
 
 ### Arquivos gerados pelo pipeline (`transforma_dataset.py`)
 
-- `base.csv` — `infos_camadas` + `infos_materiais` + `dicionario_tipo_material` unidos (bloco A.0), já limpo (cd_baia, dt_hora_consumo, peso zero, Densidade/Rendimento como número) e com as colunas `peso_t` e `volume_m3`.
+- `base.csv` — `infos_camadas` + `infos_materiais` + `dicionario_tipo_material` unidos (bloco A.0), já limpo (cd_baia, dt_hora_consumo, camadas de peso zero removidas, Densidade/Rendimento como número) e com as colunas `peso_t` e `volume_m3`.
 - `dataset_modelagem.csv` — uma linha por cestão (corrida + carregamento 1 ou 2), com as features agregadas (peso, volume, número de camadas, proporção de material leve) e a variável resposta (`carga_alta`). É o dataset pronto pra modelagem.
 - `cestoes_acima_do_limite.csv` — gerado pela Parte B (ITEM 1), lista os cestões que passam da capacidade física (70 t ou 78 m³). Ideia do Lucas; o grupo decidiu **manter** — serve como lista operacional, propósito diferente do gráfico-resumo (Gráfico 10, ITEM 2).
 - `graficos/` — todos os PNGs gerados pela Parte B.
@@ -36,18 +36,24 @@ Organizada pelos itens do checklist de EDA do bootcamp:
 | 3 — Análise univariada | taxa de carga alta, carregamentos por tipo, duração das paradas, propriedades por material |
 | 4 — Outliers | regra de negócio (capacidade física) x critério estatístico (IQR) |
 | 5 — Features criadas | num_camadas, num_materiais, peso por classe, prop_leve |
-| 6 — Análise bivariada | point-biserial, heatmap de correlação, peso x volume, posição da camada, comparação carregamento 1 x 2 |
+| 6 — Análise bivariada | point-biserial, heatmap de correlação, peso x volume, posição da camada, **ciclos de montagem** (gráficos 12 e 13), comparação carregamento 1 x 2 |
 | 7 — Padrões temporais | taxa de carga alta por turno e dia da semana |
 | 8 — Dicionário de materiais | scatter densidade x energia, verificação da regra leve/pesado |
 | 9 — Fechamento | conclusões (a escrever) |
 
 ### Decisões já tomadas (documentadas no código)
 
+- **Camadas com peso zero são removidas** (Parte A, bloco A.3). *Revisto após a apresentação para a EVCOMX:* antes eram imputadas pela mediana do material, mas peso zero significa que a camada estava na receita e o gancho não pegou o material, ou seja, a camada nunca entrou no cestão. São 2.030 linhas, em 1.394 cestões.
+- **A ordem leve → pesado → misto → leve se repete em vários ciclos dentro do mesmo cestão** (correção da EVCOMX). Ela não acontece uma vez só, com leve no fundo e no topo. Os gráficos 07 e 08 (fundo/meio/topo) só descrevem as pontas. A regra de montagem é analisada pelos gráficos 12 (sequência real das camadas) e 13 (carga alta por número de ciclos). Cestões com mais ciclos têm bem menos carga alta.
+
 - **Outliers são mantidos**, não removidos — ficam marcados em duas flags (`acima_capacidade`, regra de negócio; `outlier_estatistico`, critério IQR), porque a maioria dos outliers estatísticos no carregamento 2 são cestões pesados legítimos, não erro de medição.
 - **`num_materiais`** (quantos códigos de material diferentes entram no cestão) **foi incluída** como feature, como o Guia sugere (seção 8.2) — entra no `dataset_modelagem.csv` e na análise bivariada (point-biserial, boxplot, heatmap).
 - O turno usado (madrugada/manhã/tarde/noite) é **diferente** do turno oficial da EVCOMX (Turno A/B/C) — decidir se troca ou se mantém e justifica na apresentação.
 
 ### Pontos ainda em aberto
+
+- Confirmar com a EVCOMX se as camadas de peso muito baixo (ex.: 10 kg, 326 linhas) também são "gancho que não pegou". Por enquanto foram mantidas.
+- Nos dados, o ciclo aparece tanto como L→P→M quanto como L→M→P. Confirmar se as duas ordens contam como ciclo.
 
 - Propriedades de RECC/RECG (sem densidade/energia/rendimento no dicionário): aguardando resposta do cliente.
 - 28 linhas com chave corrida+carregamento+camada repetida: precisa investigar antes de decidir o que fazer.
