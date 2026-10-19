@@ -1,0 +1,7 @@
+corte,modelo,limiar,precisão,recall,alarmes/100
+não deixar passar,treinada só no treino,0.3499,0.273972602739726,0.8,42.52427184466019
+não deixar passar,para uso (treino + validação),0.3499,0.30319148936170215,0.76,36.50485436893204
+equilíbrio,treinada só no treino,0.5373,0.3523809523809524,0.49333333333333335,20.388349514563107
+equilíbrio,para uso (treino + validação),0.5373,0.4074074074074074,0.44,15.728155339805824
+evitar alarme falso,treinada só no treino,0.7446,0.4,0.24,8.737864077669903
+evitar alarme falso,para uso (treino + validação),0.7446,0.3793103448275862,0.14666666666666667,5.631067961165048
