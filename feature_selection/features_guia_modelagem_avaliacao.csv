@@ -1,0 +1,4 @@
+feature,corr_treino,p_mannwhitney,media_sem_CA,media_com_CA,final+violacao_fundo_topo: LogReg_PR-AUC,final+violacao_fundo_topo: RandomForest_PR-AUC,final+colchao_topo_m3: LogReg_PR-AUC,final+colchao_topo_m3: RandomForest_PR-AUC,final+prop_vol_centro: LogReg_PR-AUC,final+prop_vol_centro: RandomForest_PR-AUC
+violacao_fundo_topo,-0.04390411882538312,0.02904908587693917,0.18356559346468043,0.1377551020408163,0.27854014913001385,0.4213347076313757,,,,
+colchao_topo_m3,0.1128613167479277,0.0005480037929919265,7.71421397679687,9.156147419285174,,,0.2804378922188565,0.40236201661748244,,
+prop_vol_centro,-0.07823064896349323,0.0008253428836278075,0.33588062065515545,0.315204204200439,,,,,0.2862110077750045,0.42874926065409685

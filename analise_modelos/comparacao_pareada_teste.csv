@@ -1,5 +1,5 @@
 Random Forest (plano A) contra,métrica,diferença,IC90 da diferença,% dos sorteios em que a RF vence,leitura
-Regra: mais taxa_ca_ult5 (só histórico),PR-AUC,-0.0031456212375496895,-0.06 a +0.07,52.900000000000006,empate
-Regra: mais taxa_ca_ult5 (só histórico),recall 20/100,-0.07822222222222219,-0.18 a -0.01,3.6999999999999997,desvantagem real
-Random Forest plano B (sem histórico),PR-AUC,0.152228736006159,+0.10 a +0.21,100.0,vantagem real
-Random Forest plano B (sem histórico),recall 20/100,0.1333333333333333,+0.05 a +0.24,99.4,vantagem real
+Regra: mais taxa_ca_ult5 (só histórico),PR-AUC,0.033697111565101134,-0.04 a +0.12,78.0,empate
+Regra: mais taxa_ca_ult5 (só histórico),recall 20/100,-0.10488888888888886,-0.20 a -0.01,2.7,desvantagem real
+Random Forest plano B (sem histórico),PR-AUC,0.16327819215961215,+0.10 a +0.23,100.0,vantagem real
+Random Forest plano B (sem histórico),recall 20/100,0.1333333333333333,+0.05 a +0.22,99.7,vantagem real

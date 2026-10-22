@@ -19,11 +19,12 @@
 # | Wrapper: RFE com validação cruzada | 8 |
 # | Colunas de mentira (Boruta) | 9 |
 # | Votação, estabilidade e curva desempenho × nº de features | 10 |
-# | Comparação dos conjuntos na validação | 11 |
+# | Comparação dos conjuntos na validação (inclui o baseline mínimo "só volume") | 11 |
+# | Features sugeridas pelo Guia de Modelagem, testadas à parte | 11b |
 # | Conferência no teste, uma única vez | 12 |
 # | Mudança de regime em maio/2026 | 13 |
 # | Respostas às perguntas do Guia §1.3 | 14 |
-# | Arquivos para a modelagem | 15 |
+# | Arquivos para a modelagem e tabela das features finais | 15 |
 #
 # **Rode antes o `EDA/transforma_dataset.py`**: a feature selection parte do `EDA/base.csv`.
 
@@ -60,8 +61,9 @@ AZUL, VERMELHO, CINZA, LARANJA, VERDE = "#2b6cb0", "#c0392b", "#7f8c8d", "#dd8a2
 # A feature selection **não refaz a limpeza**: lê o `EDA/base.csv` gerado pelo
 # `EDA/transforma_dataset.py`. Decisões de limpeza que já vêm aplicadas:
 # - duplicatas 100% iguais removidas;
-# - **camadas com peso zero removidas** (EVCOMX: o gancho não pegou o material; a camada nunca
-#   entrou no cestão);
+# - **camadas abaixo de 2.000 kg removidas, peso zero incluído** (EVCOMX: peso zero = o gancho
+#   não pegou o material, a camada nunca entrou no cestão; e, por e-mail, camadas de 10 ou 100 kg
+#   também podem ser desconsideradas, "dificilmente temos camadas com menos de 2000kg");
 # - hora das 152 camadas sem horário estimada pela corrida;
 # - propriedades de RECC/RECG estimadas (pesquisa do Lucas);
 # - densidade e rendimento como número.
@@ -100,7 +102,7 @@ cam = base[base.nu_carregamento.isin([1, 2])].rename(columns={
 
 print("Raiz do projeto:", RAIZ)
 print("Camadas dos cestões 1 e 2:", cam.shape)
-print("Camadas com peso zero (deve ser 0):", int((cam.qt_peso_carregamento == 0).sum()))
+print("Camadas abaixo de 2.000 kg (deve ser 0):", int((cam.qt_peso_carregamento < 2000).sum()))
 print("Sem densidade / sem classe:", cam.densidade_t_m3.isna().sum(), "/", cam.tp_material.isna().sum())
 
 # %% [markdown]
@@ -758,6 +760,7 @@ suave = curva["RandomForest_PR-AUC"].rolling(3, center=True, min_periods=1).mean
 k_final = int(suave[suave >= 0.98 * suave.max()].index.min())
 sel_final = ranking[:k_final]
 print(f"Cotovelo: {k_final} features ->", sel_final)
+curva.assign(feature_adicionada=ranking, RF_suavizada=suave).to_csv(PASTA_SAIDA / "curva_n_features.csv")
 
 fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 for alg_nome, cor in [("RandomForest", AZUL), ("LogReg", LARANJA)]:
@@ -778,6 +781,7 @@ salvar("05_curva_desempenho_n_features")
 # Mesmos dois algoritmos para todos. O limiar de recall/precisão/F1 é o de melhor F1 na própria
 # validação (por isso essas três ficam um pouco otimistas aqui; no teste, o limiar vem da
 # validação). Também testamos:
+# - o **baseline mínimo "só volume"** (Guia de Modelagem §3.1, passo 6: todas × selecionadas × só volume);
 # - o **conjunto básico** sugerido pelo Guia (`peso_t_total`, `volume_m3_total`, `num_materiais`);
 # - o conjunto final **sem as features de ciclo** (as features de ordem agregam? Guia §5);
 # - o conjunto final **com `carga_alta_c1`** (só faz sentido se a EVCOMX confirmar o timing).
@@ -788,6 +792,7 @@ FEAT_TEMPO = [c for c in candidatas_finais if c in ["hora", "turno_A", "turno_B"
                                                      "tempo_montagem_min", "intervalo_medio_min"]]
 FEAT_HIST = [c for c in candidatas_finais if c.startswith("taxa_ca_ult")]
 conjuntos = {
+    "só volume (baseline mínimo, Guia de Modelagem §3.1)": ["volume_m3_total"],
     "básico do Guia (3)": ["peso_t_total", "volume_m3_total", "num_materiais"],
     "filtro": list(votos.index[votos.filtro == 1]),
     "wrapper: RFE": sel_rfe,
@@ -806,6 +811,53 @@ for nome, cols in conjuntos.items():
         comparacao.append(avaliar_validacao(cols, nome))
 tab_valid = pd.DataFrame(comparacao).set_index("conjunto")
 tab_valid.round(3)
+
+# %% [markdown]
+# ## 11b. Features sugeridas pelo Guia de Modelagem, testadas à parte
+#
+# O Guia de Modelagem (§2.2 C) sugere três features de estrutura que ainda não estavam entre as
+# candidatas:
+# - **`violacao_fundo_topo`**: o cestão não começa **ou** não termina com leve (a regra
+#   leve–pesado–leve do Guia; a nossa `violacao_regra` olha só pesado no fundo/topo);
+# - **`colchao_topo_m3`**: volume do último bloco de camadas, se ele for de leve (o "colchão" do topo);
+# - **`prop_vol_centro`**: proporção do volume nas camadas centrais (fora dos 30% de baixo e de cima).
+#
+# **Por que à parte, e não como candidatas?** Testamos incluí-las na votação (rodada única,
+# feita ainda com o corte antigo de peso zero e registrada no README): nenhuma passou de 4 votos,
+# mas a presença delas mudou a ordem da multicolinearidade e do RFE, e o cotovelo caiu de 9 para as
+# **5 features com 6 votos** (que continuam sendo as 5 primeiras do conjunto final). Ou seja, elas não entram por mérito próprio e só
+# perturbariam uma seleção já feita. Aqui medimos o que acrescentam **ao conjunto final**, com o
+# treino e a validação de sempre. A curva `curva_n_features.csv` mostra a diferença entre as 5 primeiras e o conjunto final.
+
+# %%
+ultimo_bloco = blocos.groupby(chave).tail(1).set_index(chave)
+centro = ~topo30 & ~base30
+extra = pd.DataFrame({
+    "violacao_regra": ((primeira == "Pesado") | (ultima == "Pesado")).astype(int),
+    "violacao_fundo_topo": ((primeira != "Leve") | (ultima != "Leve")).astype(int),
+    "colchao_topo_m3": ultimo_bloco["volume_m3"].where(ultimo_bloco["classe"] == "Leve", 0),
+    "prop_vol_centro": cam[centro].groupby(chave)["volume_m3"].sum().reindex(primeira.index).fillna(0)
+                       / g["volume_m3"].sum(),
+}).reset_index()
+EXTRA = ["violacao_fundo_topo", "colchao_topo_m3", "prop_vol_centro"]
+for parte in (treino, valid, teste):
+    parte.drop(columns=[c for c in extra.columns if c not in chave and c in parte], inplace=True)
+treino, valid, teste = [p.merge(extra, on=chave, how="left") for p in (treino, valid, teste)]
+linhas_extra = []
+for c in EXTRA:
+    x = treino[c]
+    _, p_mw = mannwhitneyu(x[y_tr == 0], x[y_tr == 1])
+    linhas_extra.append({"feature": c, "corr_treino": pointbiserialr(y_tr, x)[0], "p_mannwhitney": p_mw,
+                         "media_sem_CA": x[y_tr == 0].mean(), "media_com_CA": x[y_tr == 1].mean(),
+                         **{f"final+{c}: {k}": v for k, v in avaliar_validacao(sel_final + [c], c).items()
+                            if k.endswith("PR-AUC")}})
+tab_extra = pd.DataFrame(linhas_extra).set_index("feature")
+tab_extra.to_csv(PASTA_SAIDA / "features_guia_modelagem_avaliacao.csv")
+ref = tab_valid.loc[f"FINAL (cotovelo, {k_final})"]
+print(f"Referência, conjunto final: PR-AUC validação RF {ref['RandomForest_PR-AUC']:.3f} | LogReg {ref['LogReg_PR-AUC']:.3f}")
+print("Taxa de carga alta no treino:", round(y_tr.mean(), 3), "| com violacao_fundo_topo = 1:",
+      round(y_tr[treino.violacao_fundo_topo == 1].mean(), 3), "| = 0:", round(y_tr[treino.violacao_fundo_topo == 0].mean(), 3))
+tab_extra.round(3)
 
 # %% [markdown]
 # ## 12. Conferência no TESTE — uma única vez (slide 30, Guia §9)
@@ -895,6 +947,11 @@ print(f"\n5) Quantas features: cotovelo em {k_final} (de {len(candidatas)} candi
 # - `dataset_features_completo.csv`: todas as candidatas (para a seleção de algoritmos testar
 #   outros conjuntos).
 # - `votos_feature_selection.csv`: votos de cada método, estabilidade e correlação.
+# - `tabela_features_finais.csv`: o entregável do Guia de Modelagem (§3.2): como cada feature final
+#   é calculada, por que entra e quando está disponível.
+# - `curva_n_features.csv`: PR-AUC na validação conforme o nº de features (passo 6 do Guia).
+# - `features_guia_modelagem.csv`: as três features da seção 11b e `violacao_regra`, por cestão
+#   (usadas na validação de domínio da verificação).
 # - `graficos/`: figuras para a apresentação.
 
 # %%
@@ -902,5 +959,48 @@ meta = ["cd_corrida", "nu_carregamento", "conjunto", "inicio"]
 df[meta + sel_final + ["carga_alta"]].to_csv(PASTA_SAIDA / "dataset_modelagem_fs.csv", index=False)
 df[meta + candidatas + ["carga_alta_c1", "carga_alta"]].to_csv(PASTA_SAIDA / "dataset_features_completo.csv", index=False)
 votos.to_csv(PASTA_SAIDA / "votos_feature_selection.csv")
+extra.to_csv(PASTA_SAIDA / "features_guia_modelagem.csv", index=False)
+
+# Entregável do Guia de Modelagem (§3.2): como cada feature final é calculada, por que entra e
+# quando está disponível no processo.
+DESCRICAO = {
+    "densidade_media": ("peso total ÷ volume estimado do cestão (volume = Σ peso da camada ÷ densidade do material)",
+                        "cestão 'fofo' (pouca tonelada por m³) ocupa mais altura para o mesmo peso",
+                        "após a montagem do cestão (pesagem das camadas)"),
+    "prop_peso_pesado": ("peso das camadas de material pesado ÷ peso total",
+                         "material pesado compacta a carga; pouco pesado = cestão volumoso",
+                         "após a montagem do cestão"),
+    "peso_por_ciclo_t": ("peso total ÷ nº de ciclos de montagem (ciclo = bloco de pesado)",
+                         "ciclos 'grossos' = camadas pouco intercaladas, leve acumulado sem pesado em cima",
+                         "após a montagem do cestão"),
+    "taxa_ca_ult5": ("% de corridas com carga alta entre as 5 corridas anteriores (shift(1), nunca a atual)",
+                     "estado recente do forno: carga alta puxa carga alta",
+                     "quando a corrida anterior termina (CONFIRMAR com a EVCOMX se já é conhecido na montagem)"),
+    "taxa_ca_ult10": ("% de corridas com carga alta entre as 10 corridas anteriores (shift(1))",
+                      "mesma ideia, janela mais longa e mais estável",
+                      "quando a corrida anterior termina (CONFIRMAR com a EVCOMX)"),
+    "max_bloco_leve_m3": ("volume do maior bloco de camadas leves seguidas",
+                          "bloco grande de leve sem pesado/misto intercalado ocupa muita altura",
+                          "após a montagem do cestão"),
+    "prop_leve_base": ("peso de leve nos 30% de camadas de baixo ÷ peso dessas camadas",
+                       "muito leve no fundo = base fofa, carga mais alta",
+                       "após a montagem do cestão"),
+    "prop_PACB": ("peso do material PACB ÷ peso total",
+                  "pacote de chaparia: material volumoso para o peso",
+                  "após a montagem do cestão"),
+    "prop_PAEP": ("peso do material PAEP ÷ peso total",
+                  "pacote de estamparia: material volumoso para o peso",
+                  "após a montagem do cestão"),
+}
+tabela_final = pd.DataFrame(
+    [{"feature": c, "como_e_calculada": DESCRICAO.get(c, ("", "", ""))[0], "por_que_entra": DESCRICAO.get(c, ("", "", ""))[1],
+      "quando_esta_disponivel": DESCRICAO.get(c, ("", "", ""))[2],
+      "sinal (corr. no treino)": f"{filtro.loc[c, 'corr']:+.2f}", "votos (de 6)": int(votos.loc[c, "total"])}
+     for c in sel_final])
+faltando = [c for c in sel_final if c not in DESCRICAO]
+if faltando:
+    print("ATENÇÃO: o conjunto final mudou; descreva no dicionário DESCRICAO:", faltando)
+tabela_final.to_csv(PASTA_SAIDA / "tabela_features_finais.csv", index=False)
+print(tabela_final.to_string(index=False))
 print("Conjunto final:", sel_final)
 print("Salvos em", PASTA_SAIDA)

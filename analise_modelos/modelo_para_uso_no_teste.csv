@@ -1,5 +1,5 @@
 ,modelo,PR-AUC,ROC-AUC,recall c/ 20 alarmes por 100
-metricas,"RF plano A, treinada só no treino (avaliada até aqui)",0.3543664856243923,0.767,0.48
-metricas,RF plano A para uso (treino + validação),0.37189232015935086,0.7955454545454546,0.5333333333333333
-metricas,RF plano B para uso (treino + validação),0.19822211504950799,0.6170000000000001,0.26666666666666666
+metricas,"RF plano A, treinada só no treino (avaliada até aqui)",0.39120921842704315,0.7691212121212122,0.4533333333333333
+metricas,RF plano A para uso (treino + validação),0.40375149287956513,0.7866969696969696,0.5333333333333333
+metricas,RF plano B para uso (treino + validação),0.20941355368359543,0.6064242424242424,0.32
 metricas,Regra: mais taxa_ca_ult5 (só histórico),0.357512106861942,0.7899393939393939,0.5582222222222222

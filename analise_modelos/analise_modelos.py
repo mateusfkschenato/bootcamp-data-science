@@ -15,11 +15,16 @@
 # | 4. Compare modelos com validação cruzada | 4 e 5 |
 # | 5. Olhe a matriz de confusão do melhor | 6 |
 # | 6. Ajuste o ponto de corte ao negócio | 7 |
-# | Extra: a "chance" do modelo é chance de verdade? | 8 |
+# | Extra: a "chance" do modelo é chance de verdade? E calibrada (Platt/isotônica)? | 8 e 8b |
 # | Extra: o desempenho se mantém no tempo? | 9 |
 # | 7. Confira no teste e traduza em custo | 10 e 11 |
 # | Extra: o modelo para uso (treino + validação) no teste | 11 |
+# | Guia de Modelagem §5.5: tabela única de comparação, com os baselines | 11b |
+# | Guia de Modelagem §5.6: curva de aprendizado, segmentos, falsos negativos e positivos | 11c |
+# | Guia de Modelagem §5.7: contribuições global e local, dependência parcial, regras | 11d |
 # | Métricas de regressão (slides 24 a 29) | 12 |
+#
+# Além da Aula 06, esta etapa segue o **Guia de Modelagem Preditiva da EVCOMX** (seções 5.1 a 5.7).
 #
 # **Rode antes** `EDA/transforma_dataset.py`, `feature_selection/feature_selection.py` e
 # `selecao_algoritmos/selecao_algoritmos.py`. Nada aqui escolhe algoritmo, features ou limiar
@@ -129,7 +134,8 @@ pd.DataFrame({"cestões": [len(treino), len(valid), len(teste)],
 # ### Os modelos, re-treinados só no treino
 #
 # Mesmas definições "de fábrica" da seleção (seção 5 de `selecao_algoritmos.py`). A Random Forest
-# com as 9 features é o **plano A**; com as 7 sem histórico, o **plano B**.
+# com as features finais é o **plano A**; com as mesmas sem o histórico, o **plano B** (os
+# hiperparâmetros do plano B vêm do `modelo_final.json`: ele pode ter saído "ajustado" na seleção).
 
 # %%
 def montar(modelo, escala=False):
@@ -157,7 +163,10 @@ assert info["plano_A"]["algoritmo"] == "Random Forest" and hp["n_estimators"] ==
     "O modelo escolhido na seleção mudou: atualize ALGOS antes de seguir."
 
 modelos = {nome: clone(m).fit(treino[COLS_A], y_tr) for nome, m in ALGOS.items()}
-modelo_B = clone(ALGOS["Random Forest"]).fit(treino[COLS_B], y_tr)
+# o plano B pode ter saído "de fábrica" ou "ajustado" na seleção: usa os hiperparâmetros do .json
+assert info["plano_B"]["algoritmo"] == "Random Forest", "O plano B mudou de algoritmo: atualize esta célula."
+HP_B = {f"modelo__{k}": v for k, v in info["plano_B"]["hiperparametros"].items()}
+modelo_B = clone(ALGOS["Random Forest"]).set_params(**HP_B).fit(treino[COLS_B], y_tr)
 
 p_va = {nome: m.predict_proba(valid[COLS_A])[:, 1] for nome, m in modelos.items()}
 p_te = {nome: m.predict_proba(teste[COLS_A])[:, 1] for nome, m in modelos.items()}
@@ -257,6 +266,9 @@ armadilha.round(3)
 # - `taxa_ca_ult5`: "o forno está ruim" (carga alta recente). Se o modelo mal superar essa regra,
 #   a composição do cestão quase não ajuda.
 # - `densidade_media` e `prop_peso_pesado`: "o cestão está fofo".
+# - `volume_m3_total`: a **regra física** do Guia de Modelagem (§4.2), "alarme se o volume passa de
+#   um limiar". É o que a operação poderia fazer hoje sem ML. Aqui o sentido é fixado pelo Guia
+#   (mais volume = mais risco), não pelo treino.
 #
 # O sentido de cada regra (mais = mais risco, ou menos = mais risco) vem do **treino**.
 
@@ -274,9 +286,11 @@ def recall_no_orcamento(y, p, frac=0.20):
     achados = y[acima].sum() + vagas * y[empate].mean()
     return achados / y.sum()
 
-REGRAS = ["taxa_ca_ult5", "densidade_media", "prop_peso_pesado"]
+REGRAS = ["taxa_ca_ult5", "densidade_media", "prop_peso_pesado", "volume_m3_total"]
 mediana_tr = treino[REGRAS].median()
 SINAL = {f: np.sign(treino[[f, "carga_alta"]].corr(method="spearman").iloc[0, 1]) for f in REGRAS}
+SINAL_TREINO_VOLUME = SINAL["volume_m3_total"]
+SINAL["volume_m3_total"] = 1.0   # a regra física do Guia de Modelagem (§4.2): mais volume = mais risco
 def regra(base, f):
     return SINAL[f] * base[f].fillna(mediana_tr[f]).to_numpy()
 linhas = []
@@ -294,7 +308,9 @@ linhas.append({"modelo": "Random Forest (plano A)", "PR-AUC": average_precision_
                "ROC-AUC": roc_auc_score(y_va, p_va_A), "recall c/ 20 alarmes por 100": recall_no_orcamento(y_va, p_va_A)})
 tab_baseline = pd.DataFrame(linhas).set_index("modelo")
 print("Validação (abr–jun/2026). Recall com 20 alarmes por 100: das cargas altas, quantas estão entre os 20% de maior risco.")
-print("A regra 'carga alta recente' sozinha chega perto do modelo; as regras de composição sozinhas ficam no nível do chute.\n")
+print("A regra 'carga alta recente' sozinha chega perto do modelo; as regras de composição sozinhas ficam no nível do chute.")
+print(f"Regra de volume: no treino, a correlação de Spearman do volume com a carga alta tem sinal {SINAL_TREINO_VOLUME:+.0f}"
+      " (mais volume NÃO é mais risco nestes dados).\n")
 tab_baseline.round(3)
 
 # %% [markdown]
@@ -450,7 +466,7 @@ fig.legend(handles=[Line2D([], [], marker="o", ls="", mfc="white", mec="#333", m
                            label="cheio: validação, abr–jun/26 (IC 90%)")],
            fontsize=8, frameon=False, loc="lower center", ncol=2, bbox_to_anchor=(0.5, -0.06))
 fig.suptitle("Na validação, Random Forest e Gradient Boosting empatam na frente; logística e árvore pioram no regime novo\n"
-             "Métricas que não dependem do corte, conjunto final (9 features)", x=0.01, ha="left", fontsize=11)
+             f"Métricas que não dependem do corte, conjunto final ({len(COLS_A)} features)", x=0.01, ha="left", fontsize=11)
 salvar("01_comparacao_cv_validacao")
 
 # %% [markdown]
@@ -687,6 +703,56 @@ fig.suptitle("Mostrar faixas de risco com a taxa real, não a chance crua do mod
 salvar("04_calibracao_e_faixas_de_risco")
 
 # %% [markdown]
+# ### 8b. Calibração aplicada: Platt e isotônica (Guia de Modelagem §6.2)
+#
+# O Guia pede: se as chances não batem com as frequências reais, **aplicar calibração** (Platt ou
+# isotônica). Testamos dois jeitos, sem mexer no modelo (a ordem dos cestões, e portanto os
+# alarmes por volume, fica igual com Platt):
+# 1. **Calibrador ajustado na validação** sobre a Random Forest treinada no treino, medido no
+#    **teste**. A validação já é o conjunto de "ajustes" do projeto (limiares), então não há vazamento.
+# 2. **Calibração dentro da CV temporal** (`CalibratedClassifierCV` com as 5 provas do treino):
+#    cada prova treina a floresta no passado e calibra no bloco seguinte. Medida na validação e no teste.
+#
+# Referência: o Brier de quem sempre diz a taxa média do treino.
+
+# %%
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.frozen import FrozenEstimator
+
+linhas = []
+ref_te = brier_score_loss(y_te, np.full(len(y_te), y_tr.mean()))
+ref_va = brier_score_loss(y_va, np.full(len(y_va), y_tr.mean()))
+linhas.append({"versão": "sem calibrar (como está)", "Brier validação": brier_score_loss(y_va, p_va_A),
+               "Brier teste": brier_score_loss(y_te, p_te_A), "chance média teste": p_te_A.mean(),
+               "PR-AUC teste": average_precision_score(y_te, p_te_A)})
+CALIBRADOS = {}
+for metodo in ["sigmoid", "isotonic"]:
+    cal = CalibratedClassifierCV(FrozenEstimator(modelos["Random Forest"]), method=metodo).fit(valid[COLS_A], y_va)
+    p_cal = cal.predict_proba(teste[COLS_A])[:, 1]
+    CALIBRADOS[f"{metodo} na validação"] = p_cal
+    linhas.append({"versão": f"{'Platt' if metodo == 'sigmoid' else 'isotônica'}, ajustada na validação",
+                   "Brier validação": np.nan, "Brier teste": brier_score_loss(y_te, p_cal),
+                   "chance média teste": p_cal.mean(), "PR-AUC teste": average_precision_score(y_te, p_cal)})
+for metodo in ["sigmoid", "isotonic"]:
+    cal = CalibratedClassifierCV(clone(ALGOS["Random Forest"]), method=metodo, cv=CV).fit(treino[COLS_A], y_tr)
+    pv, pt = cal.predict_proba(valid[COLS_A])[:, 1], cal.predict_proba(teste[COLS_A])[:, 1]
+    linhas.append({"versão": f"{'Platt' if metodo == 'sigmoid' else 'isotônica'}, dentro da CV temporal",
+                   "Brier validação": brier_score_loss(y_va, pv), "Brier teste": brier_score_loss(y_te, pt),
+                   "chance média teste": pt.mean(), "PR-AUC teste": average_precision_score(y_te, pt)})
+linhas.append({"versão": "referência: sempre a taxa do treino", "Brier validação": ref_va, "Brier teste": ref_te,
+               "chance média teste": y_tr.mean(), "PR-AUC teste": y_te.mean()})
+tab_calib_aplicada = pd.DataFrame(linhas).set_index("versão")
+print(f"Taxa real no teste: {y_te.mean():.3f}")
+tab_calib_aplicada.round(4)
+
+# %% [markdown]
+# **Leitura.** A calibração resolve o problema da "chance inflada" sem mudar a ordem dos cestões
+# (Platt) ou mudando pouco (isotônica, que cria empates). Para o pátio, a proposta fica:
+# **o alarme continua definido pelo volume de alarmes** (os N cestões de maior risco), e o
+# **nível de risco mostrado** passa a ser a chance calibrada ou a faixa com a taxa real (seção 8).
+# Com dados novos, o calibrador deve ser re-ajustado junto com o modelo.
+
+# %% [markdown]
 # ## 9. O desempenho se mantém no tempo? (slide 36: "ignorar a variação")
 #
 # Uma nota só esconde a variação. Medimos o plano A **por período**, na validação e no teste, e
@@ -823,7 +889,7 @@ for plano, p, lims in [("A (com histórico)", p_te_A, LIM_A), ("B (sem históric
                        "min. de parada perdidos /30 dias": teste.seg_parada.to_numpy()[~alarme & ca].sum() / 60 / dias["teste"] * 30})
 tab_teste = pd.DataFrame(linhas).set_index(["plano", "corte"])
 
-# conferência com a seleção: os limiares do JSON têm 4 casas; o resultado no teste tem de ser o mesmo
+# conferência com a seleção: com os limiares do JSON, o resultado no teste tem de ser o mesmo
 res_sel = pd.read_csv(PASTA_SEL / "resultado_teste.csv")
 res_sel = res_sel[res_sel.plano != "baseline"].assign(corte=lambda d: d.cenario.map(CURTO)).set_index(["plano", "corte"])
 for col_aqui, col_sel in [("recall", "recall"), ("precisão", "precisao"), ("alarmes/100", "alarmes_por_100")]:
@@ -979,6 +1045,349 @@ ax.grid(axis="x", visible=False)
 salvar("06_a_cada_100_cestoes_no_teste")
 
 # %% [markdown]
+# ## 11b. Tabela única de comparação (Guia de Modelagem §5.5)
+#
+# O Guia pede **uma tabela única e honesta**, com os baselines na mesma linha dos modelos:
+# features, PR-AUC, ROC-AUC, recall e precisão no limiar, F2 e Brier. Acrescentamos o **MCC** e a
+# **acurácia balanceada** (§5.3, "resumos robustos ao desbalanceamento").
+#
+# - **Validação:** todos os modelos, treinados só no treino. O limiar de cada linha é o de melhor F2
+#   na própria validação, com no máximo metade dos cestões em alarme (o mesmo critério da seleção).
+#   Por isso recall, precisão e F2 da validação são **otimistas para todas as linhas por igual**;
+#   PR-AUC, ROC-AUC e Brier não dependem do limiar.
+# - **Teste:** só os modelos escolhidos (planos A e B) e os baselines, com o limiar vindo da
+#   validação. Os modelos não escolhidos não são olhados no teste (verificação, seção 3).
+# - **Regras** (volume, histórico) não dão chance, só uma ordem: o Brier não se aplica a elas.
+#   A regra de volume é a do Guia (§4.2): **mais volume = mais risco**.
+
+# %%
+from sklearn.metrics import matthews_corrcoef, balanced_accuracy_score, fbeta_score, precision_recall_curve
+
+def limiar_f2(y, p, alarmes_max=0.5):
+    prec, rec, lims = precision_recall_curve(y, p)
+    prec, rec = prec[:-1], rec[:-1]
+    taxa = np.array([(p >= l).mean() for l in lims])
+    f2 = 5 * prec * rec / np.clip(4 * prec + rec, 1e-12, None)
+    f2[taxa > alarmes_max] = -1
+    return float(lims[np.argmax(f2)])
+
+def linha_tabela(nome, n_feat, y, p, lim, eh_chance=True):
+    prev = (np.asarray(p) >= lim).astype(int)
+    return {"modelo": nome, "features": n_feat, "PR-AUC": average_precision_score(y, p),
+            "ROC-AUC": roc_auc_score(y, p) if len(np.unique(p)) > 1 else 0.5, "limiar": lim,
+            "recall @ limiar": recall_score(y, prev, zero_division=0),
+            "precisão @ limiar": precision_score(y, prev, zero_division=0),
+            "F2": fbeta_score(y, prev, beta=2, zero_division=0),
+            "Brier": brier_score_loss(y, p) if eh_chance else np.nan,
+            "MCC": matthews_corrcoef(y, prev), "acurácia balanceada": balanced_accuracy_score(y, prev),
+            "alarmes/100": 100 * prev.mean()}
+
+vol = lambda base: base["volume_m3_total"].to_numpy()
+p_dummy_va = np.zeros(len(y_va))
+p_dummy_te = np.zeros(len(y_te))
+ENTRADAS_VA = [("Baseline trivial: sempre 'normal'", 0, p_dummy_va, True),
+               ("Baseline físico: regra de volume (mais volume = mais risco)", 1, vol(valid), False),
+               ("Baseline: regra do histórico (taxa_ca_ult5)", 1, regra(valid, "taxa_ca_ult5"), False),
+               *[(nome + (" (plano A, escolhido)" if nome == "Random Forest" else ""), len(COLS_A), p_va[nome], True)
+                 for nome in ALGOS],
+               ("Random Forest, sem histórico (plano B)", len(COLS_B), p_va_B, True)]
+LIM_TAB = {}
+linhas = []
+for nome, n, p, chance in ENTRADAS_VA:
+    LIM_TAB[nome] = 0.5 if n == 0 else limiar_f2(y_va.to_numpy(), p)
+    linhas.append(linha_tabela(nome, n, y_va, p, LIM_TAB[nome], chance))
+tab_unica_val = pd.DataFrame(linhas).set_index("modelo")
+
+ENTRADAS_TE = [("Baseline trivial: sempre 'normal'", 0, p_dummy_te, True),
+               ("Baseline físico: regra de volume (mais volume = mais risco)", 1, vol(teste), False),
+               ("Baseline: regra do histórico (taxa_ca_ult5)", 1, regra(teste, "taxa_ca_ult5"), False),
+               ("Random Forest (plano A, escolhido)", len(COLS_A), p_te_A, True),
+               ("Random Forest, sem histórico (plano B)", len(COLS_B), p_te_B, True)]
+tab_unica_te = pd.DataFrame([linha_tabela(nome, n, y_te, p, LIM_TAB[nome], chance)
+                             for nome, n, p, chance in ENTRADAS_TE]).set_index("modelo")
+print("VALIDAÇÃO (abr–jun/2026): limiar de melhor F2 na própria validação, para todas as linhas")
+print(tab_unica_val.round(3).to_string())
+print("\nTESTE (jun–ago/2026): limiares vindos da validação; só os escolhidos e os baselines")
+tab_unica_te.round(3)
+
+# %% [markdown]
+# ## 11c. Diagnóstico de erros (Guia de Modelagem §5.6)
+#
+# O gap treino × validação (sobreajuste) está na verificação (seção 2). Aqui:
+# 1. **Curva de aprendizado:** mais dados ajudariam?
+# 2. **Desempenho por segmento:** carregamento 1 × 2, turno e faixa de volume.
+# 3. **Falsos negativos e falsos positivos:** o que os cestões errados têm em comum?
+#
+# Todos com a Random Forest do plano A treinada **só no treino** e o corte "não deixar passar"
+# (o limiar F2 da seleção). Para ter mais eventos, segmentos e erros usam **validação + teste
+# juntos** (1.028 cestões, ~167 cargas altas); nada aqui escolhe ou ajusta o modelo.
+
+# %% [markdown]
+# ### Curva de aprendizado
+#
+# Treinamos o mesmo modelo com frações crescentes do treino, em duas ordens:
+# - **do mais antigo**: 20% = os primeiros meses; é a curva clássica no tempo;
+# - **do mais recente**: 20% = os últimos meses antes da validação.
+#
+# Se a curva "do mais recente" sobe rápido e depois fica plana, o que limita o modelo é **o
+# regime** dos dados, não a quantidade. Se as duas ainda sobem em 100%, mais dados ajudariam.
+
+# %%
+ordem_corr = treino.groupby("cd_corrida")["inicio"].min().sort_values().index.to_numpy()
+FRACOES = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+linhas = []
+for sentido in ["do mais antigo", "do mais recente"]:
+    for f in FRACOES:
+        n = int(round(f * len(ordem_corr)))
+        sel = ordem_corr[:n] if sentido == "do mais antigo" else ordem_corr[-n:]
+        parte = treino[treino.cd_corrida.isin(sel)]
+        m = clone(ALGOS["Random Forest"]).fit(parte[COLS_A], parte["carga_alta"])
+        linhas.append({"sentido": sentido, "fração do treino": f, "cestões": len(parte),
+                       "PR-AUC treino": average_precision_score(parte["carga_alta"], m.predict_proba(parte[COLS_A])[:, 1]),
+                       "PR-AUC validação": average_precision_score(y_va, m.predict_proba(valid[COLS_A])[:, 1])})
+tab_aprend = pd.DataFrame(linhas)
+fig, ax = plt.subplots(figsize=(9, 4.2))
+for sentido, cor, mk in [("do mais antigo", AZUL, "o"), ("do mais recente", LARANJA, "s")]:
+    t = tab_aprend[tab_aprend.sentido == sentido]
+    ax.plot(t["cestões"], t["PR-AUC validação"], "-" + mk, color=cor, lw=2, ms=6, label=f"validação, treino {sentido}")
+    ax.plot(t["cestões"], t["PR-AUC treino"], ":" + mk, color=cor, lw=1.2, ms=4, alpha=0.6, label=f"no próprio treino ({sentido})")
+ax.axhline(y_va.mean(), color=CINZA, ls=":", lw=1.2)
+ax.annotate("chute (validação)", (tab_aprend["cestões"].min(), y_va.mean()), xytext=(0, 4), textcoords="offset points",
+            fontsize=8, color=CINZA)
+ax.set_xlabel("cestões usados no treino")
+ax.set_ylabel("PR-AUC")
+ax.set_ylim(0, 1.02)
+fim = tab_aprend.groupby("sentido")["PR-AUC validação"]
+ax.set_title("Curva de aprendizado: o que limita o modelo é quantidade ou regime dos dados?\n"
+             f"Random Forest (plano A); validação com 100% do treino = {br(fim.last().iloc[0])}",
+             loc="left", fontsize=11)
+ax.legend(fontsize=8, frameon=False, loc="center right")
+salvar("07_curva_de_aprendizado")
+tab_aprend.pivot(index="fração do treino", columns="sentido", values="PR-AUC validação").round(3)
+
+# %% [markdown]
+# ### Desempenho por segmento
+#
+# PR-AUC (com IC 90%, *bootstrap* por corrida), a taxa de carga alta do segmento (= a PR-AUC de um
+# chute nele), e recall e precisão no corte "não deixar passar". Faixas de volume pelos tercis do
+# **treino**. Turno no padrão da EVCOMX: A 06–14h, B 14–22h, C 22–06h.
+
+# %%
+vt = pd.concat([valid.assign(p=p_va_A), teste.assign(p=p_te_A)], ignore_index=True)
+LIM_F2 = LIM_A[CENARIOS[0]]
+q_vol = treino["volume_m3_total"].quantile([1 / 3, 2 / 3]).to_numpy()
+vt["carregamento"] = "cestão " + vt["nu_carregamento"].astype(int).astype(str)
+vt["turno"] = np.select([vt["hora"].between(6, 13), vt["hora"].between(14, 21)], ["A (06–14h)", "B (14–22h)"], "C (22–06h)")
+vt["faixa de volume"] = pd.cut(vt["volume_m3_total"], [-np.inf, *q_vol, np.inf],
+                               labels=[f"baixo (< {q_vol[0]:.0f} m³)", "médio", f"alto (> {q_vol[1]:.0f} m³)"]).astype(str)
+BOOT_VT = amostras_bootstrap(vt)
+linhas = []
+for seg in ["carregamento", "turno", "faixa de volume"]:
+    for valor, d in vt.groupby(seg):
+        idx = d.index.to_numpy()
+        y_s, p_s = d["carga_alta"].to_numpy(), d["p"].to_numpy()
+        boots = []
+        pos = {i: k for k, i in enumerate(idx)}
+        for a in BOOT_VT:
+            a_s = np.array([pos[i] for i in a if i in pos])
+            if len(a_s) and y_s[a_s].sum() > 0:
+                boots.append(average_precision_score(y_s[a_s], p_s[a_s]))
+        prev = p_s >= LIM_F2
+        linhas.append({"segmento": seg, "valor": valor, "cestões": len(d), "cargas altas": int(y_s.sum()),
+                       "taxa (chute)": y_s.mean(), "PR-AUC": average_precision_score(y_s, p_s),
+                       "PR-AUC IC90": f"{np.percentile(boots, 5):.2f}–{np.percentile(boots, 95):.2f}".replace(".", ","),
+                       "PR-AUC ÷ chute": average_precision_score(y_s, p_s) / y_s.mean(),
+                       "recall (corte F2)": prev[y_s == 1].mean(), "precisão (corte F2)": y_s[prev].mean() if prev.any() else np.nan,
+                       "alarmes/100": 100 * prev.mean()})
+tab_seg = pd.DataFrame(linhas).set_index(["segmento", "valor"])
+ordem_seg = [i for i in tab_seg.index if i[0] != "faixa de volume"] + \
+            [i for k in ("baixo", "médio", "alto") for i in tab_seg.index if i[0] == "faixa de volume" and i[1].startswith(k)]
+tab_seg = tab_seg.loc[ordem_seg]
+
+fig, ax = plt.subplots(figsize=(9, 4.6))
+ypos = np.arange(len(tab_seg))[::-1]
+lo = tab_seg["PR-AUC IC90"].str.split("–").str[0].str.replace(",", ".").astype(float)
+hi = tab_seg["PR-AUC IC90"].str.split("–").str[1].str.replace(",", ".").astype(float)
+ax.errorbar(tab_seg["PR-AUC"], ypos, xerr=[tab_seg["PR-AUC"] - lo, hi - tab_seg["PR-AUC"]], fmt="o", ms=7, color=AZUL,
+            ecolor=AZUL, elinewidth=1.2, label="PR-AUC do modelo (IC 90%)")
+ax.plot(tab_seg["taxa (chute)"], ypos, "|", ms=14, mew=2, color=CINZA, label="chute (taxa do segmento)")
+ax.set_yticks(ypos, [f"{s}: {v}  (n={n}, CA={c})" for (s, v), n, c in zip(tab_seg.index, tab_seg["cestões"], tab_seg["cargas altas"])], fontsize=8)
+ax.set_xlim(0, 0.8)
+ax.set_xlabel("PR-AUC (validação + teste)")
+ax.set_title("O modelo fica acima do chute em todos os segmentos; os intervalos se sobrepõem\n"
+             "Random Forest (plano A) treinada só no treino, por carregamento, turno e faixa de volume",
+             loc="left", fontsize=11)
+ax.legend(fontsize=8, frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=2)
+ax.grid(axis="y", visible=False)
+salvar("08_desempenho_por_segmento")
+tab_seg.round(3)
+
+# %% [markdown]
+# ### Falsos negativos e falsos positivos: o que têm em comum?
+#
+# No corte "não deixar passar", comparamos:
+# - **cargas altas perdidas (FN) × pegas (VP)**: o que o modelo não viu?
+# - **alarmes falsos (FP) × normais sem alarme (VN)**: os alarmes falsos eram cestões arriscados
+#   que, por sorte, não deram carga alta?
+#
+# Mediana de cada característica e teste de Mann-Whitney (proporções para as binárias). Além das 9
+# features do modelo, olhamos características que ficaram fora dele (volume, peso, carregamento,
+# turno, ciclos). Os casos mais "certos" de cada erro vão para `casos_para_especialista.csv`, para a
+# revisão com o pátio que o Guia pede (§6.3).
+
+# %%
+CARAC = COLS_A + ["volume_m3_total", "peso_t_total", "prop_leve", "n_ciclos", "num_materiais", "eh_cestao_2", "hora"]
+vt["alarme"] = vt["p"] >= LIM_F2
+vt["resultado"] = np.select([vt.alarme & (vt.carga_alta == 1), ~vt.alarme & (vt.carga_alta == 1), vt.alarme & (vt.carga_alta == 0)],
+                            ["VP", "FN", "FP"], "VN")
+linhas = []
+for c in CARAC:
+    lin = {"característica": c}
+    for a, b in [("FN", "VP"), ("FP", "VN")]:
+        xa, xb = vt.loc[vt.resultado == a, c].dropna(), vt.loc[vt.resultado == b, c].dropna()
+        lin[f"mediana {a}"], lin[f"mediana {b}"] = xa.median(), xb.median()
+        if c == "eh_cestao_2":
+            lin[f"mediana {a}"], lin[f"mediana {b}"] = xa.mean(), xb.mean()   # proporção de cestões 2
+        lin[f"p {a}×{b}"] = mannwhitneyu(xa, xb).pvalue
+    linhas.append(lin)
+tab_erros = pd.DataFrame(linhas).set_index("característica")
+print("Contagem (validação + teste):", vt["resultado"].value_counts().to_dict())
+print("eh_cestao_2: a 'mediana' é a proporção de cestões 2 no grupo.")
+print("Diferenças com p < 0,01:", {k: [c for c in tab_erros.index if tab_erros.loc[c, k] < 0.01] for k in ["p FN×VP", "p FP×VN"]})
+
+cols_caso = ["conjunto", "cd_corrida", "nu_carregamento", "p", "carga_alta", "resultado"] + COLS_A + ["volume_m3_total", "peso_t_total"]
+casos = pd.concat([vt[vt.resultado == "FN"].nsmallest(10, "p").assign(motivo="carga alta com chance mais baixa (FN mais 'certo')"),
+                   vt[vt.resultado == "FP"].nlargest(10, "p").assign(motivo="normal com chance mais alta (FP mais 'certo')")])
+casos[["motivo"] + cols_caso].rename(columns={"p": "chance_prevista"}).to_csv(PASTA_SAIDA / "casos_para_especialista.csv", index=False)
+tab_erros.round(3)
+
+# %% [markdown]
+# ## 11d. Interpretabilidade (Guia de Modelagem §5.7)
+#
+# "Um modelo que a operação não entende não será usado." O Guia sugere permutação e/ou SHAP,
+# dependência parcial e explicação local.
+# - **Importância global por permutação:** já está na seleção (gráfico 07 de `selecao_algoritmos/`).
+# - **Contribuição de cada feature, cestão a cestão:** o pacote `shap` não faz parte do ambiente do
+#   projeto. Usamos a decomposição **por caminho das árvores** (método de Saabas, o mesmo do pacote
+#   `treeinterpreter`): em cada árvore, a mudança na chance a cada pergunta é atribuída à feature
+#   da pergunta. A soma das contribuições + a chance média do treino = a chance prevista,
+#   **exatamente**. É uma aproximação do SHAP (mesma ideia, divisão diferente nas interações).
+# - **Dependência parcial + ICE:** como a chance muda quando uma feature varia, com as outras fixas.
+# - **Tradução em regras:** taxas reais por faixa das duas features mais fortes.
+
+# %%
+from sklearn.inspection import PartialDependenceDisplay
+
+def contribuicoes_arvores(pipe, X):
+    """Decomposição de Saabas para uma Random Forest num Pipeline (vazios -> modelo).
+    Devolve (vies, contribuicoes[n, f]) com vies + contribuicoes.sum(1) = predict_proba[:, 1]."""
+    Xt = pipe.named_steps["vazios"].transform(X)
+    rf = pipe.named_steps["modelo"]
+    contrib = np.zeros(Xt.shape)
+    vies = 0.0
+    for est in rf.estimators_:
+        t = est.tree_
+        val = t.value[:, 0, :] / t.value[:, 0, :].sum(axis=1, keepdims=True)
+        v1 = val[:, 1]
+        caminho = est.decision_path(Xt.astype(np.float32))
+        vies += v1[0]
+        for i in range(Xt.shape[0]):
+            nos = caminho.indices[caminho.indptr[i]:caminho.indptr[i + 1]]
+            for pai, filho in zip(nos[:-1], nos[1:]):
+                contrib[i, t.feature[pai]] += v1[filho] - v1[pai]
+    n = len(rf.estimators_)
+    return vies / n, contrib / n
+
+modelo_A = modelos["Random Forest"]
+vies, contrib_va = contribuicoes_arvores(modelo_A, valid[COLS_A])
+assert np.allclose(vies + contrib_va.sum(1), p_va_A, atol=1e-6), "a decomposição não fecha com a chance prevista"
+print(f"Conferência OK: chance média de base {vies:.3f} + contribuições = chance prevista, nos {len(valid)} cestões da validação")
+imp_contrib = pd.Series(np.abs(contrib_va).mean(0), index=COLS_A).sort_values()
+
+fig, axes = plt.subplots(1, 2, figsize=(13, 4.6), gridspec_kw={"width_ratios": [1.25, 1]})
+ax = axes[0]
+rng_j = np.random.default_rng(SEED)
+for y, c in enumerate(imp_contrib.index):
+    j = COLS_A.index(c)
+    x = valid[c].to_numpy()
+    cor = (x - np.nanpercentile(x, 5)) / max(np.nanpercentile(x, 95) - np.nanpercentile(x, 5), 1e-9)
+    ax.scatter(contrib_va[:, j], y + rng_j.uniform(-0.25, 0.25, len(x)), c=np.clip(cor, 0, 1), cmap="coolwarm",
+               s=8, alpha=0.7, linewidths=0)
+ax.axvline(0, color="#333", lw=0.8)
+ax.set_yticks(range(len(imp_contrib)), imp_contrib.index)
+ax.set_xlabel("contribuição para a chance de carga alta (validação)")
+ax.set_title("Cada ponto é um cestão; vermelho = valor alto da feature", loc="left", fontsize=10)
+ax.grid(axis="y", visible=False)
+
+i_top = int(np.argmax(p_te_A))
+_, contrib_te = contribuicoes_arvores(modelo_A, teste[COLS_A].iloc[[i_top]])
+loc = pd.Series(contrib_te[0], index=COLS_A).sort_values()
+ax = axes[1]
+ax.barh(range(len(loc)), loc.values, color=[VERMELHO if v > 0 else AZUL for v in loc.values], height=0.6)
+ax.axvline(0, color="#333", lw=0.8)
+ax.set_yticks(range(len(loc)), [f"{c} = {br(teste[c].iloc[i_top])}" for c in loc.index], fontsize=8)
+r_top = teste.iloc[i_top]
+ax.set_xlabel("contribuição para a chance")
+ax.set_title(f"Por que o cestão {r_top.cd_corrida} c{int(r_top.nu_carregamento)} (teste) teve o maior risco?\n"
+             f"base {br(vies)} + contribuições = {br(p_te_A[i_top])}; deu carga alta: {'sim' if r_top.carga_alta else 'não'}",
+             loc="left", fontsize=10)
+ax.grid(axis="y", visible=False)
+fig.suptitle("Interpretabilidade: contribuição de cada feature, no geral e num cestão\n"
+             "Random Forest (plano A) treinada no treino; decomposição por caminho das árvores (Saabas)",
+             x=0.01, ha="left", fontsize=11)
+salvar("09_contribuicoes_global_e_local")
+print(f"Explicação local, cestão {r_top.cd_corrida} c{int(r_top.nu_carregamento)}:")
+print(loc.iloc[::-1].round(3).to_string())
+
+# %%
+TOP4 = list(imp_contrib.index[::-1][:4])
+fig, axes = plt.subplots(1, 4, figsize=(15, 3.8), sharey=True)
+PartialDependenceDisplay.from_estimator(modelo_A, valid[COLS_A], TOP4, kind="both", subsample=150, random_state=SEED,
+                                        ax=axes, ice_lines_kw={"color": AZUL, "alpha": 0.08, "lw": 0.6},
+                                        pd_line_kw={"color": VERMELHO, "lw": 2.5})
+for ax in axes:
+    ax.set_ylabel("chance prevista" if ax is axes[0] else "")
+    ax.grid(True, color="#e5e5e5")
+fig.suptitle("Dependência parcial (vermelho) e ICE (azul, um cestão por linha) das 4 features de maior contribuição\n"
+             "Random Forest (plano A), validação: como a chance muda quando só aquela feature varia",
+             x=0.01, ha="left", fontsize=11)
+salvar("10_dependencia_parcial")
+
+# sentido da dependência parcial (monotonia), para a validação de domínio na verificação
+from sklearn.inspection import partial_dependence
+sentido_pd = {}
+for c in COLS_A:
+    pdp = partial_dependence(modelo_A, valid[COLS_A], [c], grid_resolution=20)
+    v = pdp["average"][0]
+    sentido_pd[c] = {"chance no menor valor": v[0], "chance no maior valor": v[-1],
+                     "variação": v[-1] - v[0], "sobe em % dos passos": 100 * (np.diff(v) > 0).mean()}
+tab_pd = pd.DataFrame(sentido_pd).T
+tab_pd.round(3)
+
+# %% [markdown]
+# ### Tradução em regras para o pátio
+#
+# O Guia sugere limiares práticos ("acima de X, com Y, o risco é Z%"). Usamos as **taxas reais** da
+# validação (abr–jun/2026, o regime mais recente que não é o teste), cruzando o histórico do forno
+# com a densidade do cestão. Os cortes da densidade são os tercis do treino.
+
+# %%
+q_dens = treino["densidade_media"].quantile([1 / 3, 2 / 3]).to_numpy()
+regras = valid.assign(
+    historico=np.where(valid["taxa_ca_ult5"].fillna(0) >= 0.4, "≥ 2 cargas altas nas últimas 5 corridas",
+                       np.where(valid["taxa_ca_ult5"].fillna(0) > 0, "1 carga alta nas últimas 5", "nenhuma nas últimas 5")),
+    densidade=pd.cut(valid["densidade_media"], [-np.inf, *q_dens, np.inf],
+                     labels=[f"fofo (< {q_dens[0]:.2f} t/m³)", "médio", f"denso (> {q_dens[1]:.2f} t/m³)"]))
+ORDEM_HIST = ["nenhuma nas últimas 5", "1 carga alta nas últimas 5", "≥ 2 cargas altas nas últimas 5 corridas"]
+agg = regras.groupby(["historico", "densidade"], observed=False)["carga_alta"].agg(["mean", "size"])
+tab_regras = (agg.apply(lambda r: f"{100 * r['mean']:.0f}% (n={int(r['size'])})" if r["size"] else "—", axis=1)
+              .unstack("densidade").reindex(ORDEM_HIST))
+tab_regras["todas as densidades"] = [f"{100 * regras.loc[regras.historico == h, 'carga_alta'].mean():.0f}% "
+                                     f"(n={(regras.historico == h).sum()})" for h in ORDEM_HIST]
+print(f"Taxa real de carga alta na validação: {y_va.mean():.0%}. Células com n < 30 são só indicativas.")
+tab_regras
+
+# %% [markdown]
 # ## 12. E as métricas de regressão? (slides 24 a 29)
 #
 # MAE e RMSE medem "quanto erramos" quando a resposta é um **número**. A pergunta da EVCOMX
@@ -1046,5 +1455,13 @@ faixas.to_csv(PASTA_SAIDA / "faixas_de_risco.csv")
 tab_mes.assign(**{"período": tab_mes["período"].str.replace("\n", " ")}).to_csv(PASTA_SAIDA / "metricas_por_periodo.csv", index=False)
 tab_minutos.to_csv(PASTA_SAIDA / "recall_em_minutos.csv")
 tab_teste.to_csv(PASTA_SAIDA / "teste_traduzido.csv")
+tab_unica_val.to_csv(PASTA_SAIDA / "tabela_unica_validacao.csv")
+tab_unica_te.to_csv(PASTA_SAIDA / "tabela_unica_teste.csv")
+tab_aprend.to_csv(PASTA_SAIDA / "curva_de_aprendizado.csv", index=False)
+tab_seg.to_csv(PASTA_SAIDA / "desempenho_por_segmento.csv")
+tab_erros.to_csv(PASTA_SAIDA / "analise_erros_fn_fp.csv")
+tab_pd.to_csv(PASTA_SAIDA / "dependencia_parcial_sentido.csv")
+tab_calib_aplicada.to_csv(PASTA_SAIDA / "calibracao_aplicada.csv")
+tab_regras.to_csv(PASTA_SAIDA / "regras_para_o_patio.csv")
 tab_custo_teste.to_csv(PASTA_SAIDA / "custo_no_teste.csv")
 print("Arquivos salvos em", PASTA_SAIDA.relative_to(RAIZ))

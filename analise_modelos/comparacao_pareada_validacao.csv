@@ -1,9 +1,9 @@
 Random Forest contra,métrica,diferença,IC90 da diferença,% dos sorteios em que a RF vence,leitura
-Regressão logística,PR-AUC,0.16784714831811687,+0.10 a +0.23,100.0,vantagem real
-Regressão logística,recall 20/100,0.10869565217391303,+0.05 a +0.18,99.6,vantagem real
-Árvore de decisão,PR-AUC,0.11159785408025491,+0.06 a +0.17,100.0,vantagem real
-Árvore de decisão,recall 20/100,0.06427221172022679,+0.01 a +0.12,98.4,vantagem real
-Gradient Boosting,PR-AUC,0.0384614225842837,-0.01 a +0.08,91.5,vantagem provável
-Gradient Boosting,recall 20/100,0.010869565217391297,-0.05 a +0.06,46.400000000000006,empate
-Regra: mais taxa_ca_ult5 (só histórico),PR-AUC,0.08755992526799738,+0.01 a +0.17,97.2,vantagem real
-Regra: mais taxa_ca_ult5 (só histórico),recall 20/100,0.027686628383921275,-0.05 a +0.11,73.7,empate
+Regressão logística,PR-AUC,0.14122043798822986,+0.09 a +0.19,100.0,vantagem real
+Regressão logística,recall 20/100,0.07608695652173914,+0.00 a +0.15,93.89999999999999,vantagem provável
+Árvore de decisão,PR-AUC,0.13146317800643487,+0.09 a +0.18,100.0,vantagem real
+Árvore de decisão,recall 20/100,0.0496589940323956,-0.00 a +0.12,93.2,vantagem provável
+Gradient Boosting,PR-AUC,0.032292908294871525,-0.00 a +0.06,93.89999999999999,vantagem provável
+Gradient Boosting,recall 20/100,0.0,-0.05 a +0.07,53.900000000000006,empate
+Regra: mais taxa_ca_ult5 (só histórico),PR-AUC,0.09010672355003024,+0.02 a +0.17,98.5,vantagem real
+Regra: mais taxa_ca_ult5 (só histórico),recall 20/100,0.00594749794913868,-0.07 a +0.10,60.6,empate

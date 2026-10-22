@@ -12,6 +12,7 @@
 # | 4. Pipeline e 2 a 4 algoritmos | 5 |
 # | 5. Comparar com validação cruzada | 6 |
 # | Hiperparâmetros (slide 24) | 7 |
+# | Desbalanceamento: pesos × sem peso × subamostragem (Guia de Modelagem §4.4) | 7b |
 # | 6. Subir de complexidade só se valer a pena (slide 33) | 8 |
 # | Limiar de decisão (slide 16) | 9 |
 # | 7. Conferir no teste, uma única vez (slide 35) | 10 |
@@ -58,8 +59,8 @@ AZUL, VERMELHO, CINZA, LARANJA, VERDE = "#2b6cb0", "#c0392b", "#7f8c8d", "#dd8a2
 #
 # - `dataset_features_completo.csv`: as 80 candidatas, a coluna `conjunto` (split 70/15/15
 #   temporal, por corrida) e `carga_alta`.
-# - `dataset_modelagem_fs.csv`: define o **conjunto FINAL de 9 features**.
-# - `votos_feature_selection.csv`: define o **consenso (≥ 4 votos, 22 features)**.
+# - `dataset_modelagem_fs.csv`: define o **conjunto FINAL** (6 features com o corte de 2.000 kg da EDA).
+# - `votos_feature_selection.csv`: define o **consenso (≥ 4 votos, 18 features)**.
 #
 # `inicio` (data do cestão) é só metadado: serve para ordenar no tempo, nunca entra no modelo.
 
@@ -97,7 +98,7 @@ chk = fs.merge(df[["cd_corrida", "nu_carregamento", "conjunto", "carga_alta"]],
 assert len(chk) == len(fs) == len(df), "Os CSVs da feature selection não batem entre si."
 assert (chk["carga_alta_fs"] == chk["carga_alta"]).all() and (chk["conjunto_fs"] == chk["conjunto"]).all()
 
-CONJUNTOS = {"final (9)": FEAT_FINAL, f"consenso ({len(FEAT_CONSENSO)})": FEAT_CONSENSO,
+CONJUNTOS = {f"final ({len(FEAT_FINAL)})": FEAT_FINAL, f"consenso ({len(FEAT_CONSENSO)})": FEAT_CONSENSO,
              f"final sem histórico ({len(FEAT_SEM_HIST)})": FEAT_SEM_HIST}
 NOME_FINAL, NOME_CONS, NOME_SEMH = list(CONJUNTOS)
 for nome, cols in CONJUNTOS.items():
@@ -184,11 +185,17 @@ for i, (a, b) in enumerate(CV, 1):
 # %% [markdown]
 # ## 4. Baseline: a régua mínima (slides 8 a 11)
 #
-# Dois "modelos de mentira" (`DummyClassifier`):
-# - **maioria**: sempre diz "normal". Acurácia alta, recall zero;
-# - **sorteio**: sorteia "carga alta" na mesma proporção do treino.
+# Três réguas, como pede o Guia de Modelagem (§4.2):
+# - **trivial** (`DummyClassifier`): **maioria** (sempre diz "normal": acurácia alta, recall zero)
+#   e **sorteio** (sorteia "carga alta" na proporção do treino);
+# - **física / regra de volume**: alarme quando o volume estimado do cestão passa de um limiar
+#   escolhido **no treino** (melhor F2, no máximo metade dos cestões em alarme). É o que a
+#   operação poderia fazer hoje, sem ML. A nota sem limiar (PR-AUC) usa o próprio volume como
+#   "chance";
+# - **estatística**: a regressão logística com as features finais (seção 5).
 #
-# Qualquer algoritmo precisa superar os dois, **na mesma métrica**.
+# Qualquer algoritmo precisa superar as réguas, **na mesma métrica**. A regra do histórico
+# (só `taxa_ca_ult5`), que se mostrou a régua mais dura, é tratada na análise de modelos.
 
 # %% [markdown]
 # ## 5. Pipeline e algoritmos (slides 13 a 29)
@@ -230,10 +237,12 @@ def algoritmos(n_jobs_rf=-1):
     }
 
 ALGOS = list(algoritmos())
+ALGOS.insert(2, "Baseline: regra de volume")
 ALGOS_REAIS = [a for a in ALGOS if not a.startswith("Baseline")]
 COMPLEXIDADE = {"Regressão logística": 1, "Árvore de decisão": 2, "Random Forest": 3, "Gradient Boosting": 4}
 COR_ALGO = {"Regressão logística": LARANJA, "Árvore de decisão": VERDE, "Random Forest": AZUL,
-            "Gradient Boosting": VERMELHO, "Baseline: maioria": CINZA, "Baseline: sorteio": CINZA}
+            "Gradient Boosting": VERMELHO, "Baseline: maioria": CINZA, "Baseline: sorteio": CINZA,
+            "Baseline: regra de volume": CINZA}
 
 # %% [markdown]
 # ## 6. Comparação justa: validação cruzada temporal + validação (slide 30)
@@ -263,6 +272,28 @@ for nome_conj, cols in CONJUNTOS.items():
                        **avaliar(pipe, cols)})
         de_fabrica[(nome_conj, nome_alg)] = pipe      # avaliar() deixa o pipe treinado no treino inteiro
 tab_fabrica = pd.DataFrame(linhas)
+
+# Baseline físico (Guia de Modelagem §4.2): alarme se volume_m3_total > limiar escolhido no treino
+COL_VOL = "volume_m3_total"
+def limiar_regra(score, y, beta=2.0, alarmes_max=0.5):
+    """Limiar de uma regra 'alarme se score > limiar': melhor F-beta, com no máximo metade em alarme."""
+    cand_l = np.unique(np.quantile(score, np.linspace(0.5, 0.99, 50)))
+    f = [fbeta_score(y, score > l, beta=beta, zero_division=0) if (score > l).mean() <= alarmes_max else -1
+         for l in cand_l]
+    return float(cand_l[int(np.argmax(f))])
+cv_vol = [average_precision_score(treino.loc[b, "carga_alta"], treino.loc[b, COL_VOL]) for _, b in CV]
+cv_vol_roc = [roc_auc_score(treino.loc[b, "carga_alta"], treino.loc[b, COL_VOL]) for _, b in CV]
+LIM_VOL = limiar_regra(treino[COL_VOL].to_numpy(), y_tr.to_numpy())
+regra_vol = {"algoritmo": "Baseline: regra de volume", "n_features": 1,
+             "CV_PR-AUC": np.mean(cv_vol), "CV_PR-AUC_dp": np.std(cv_vol), "CV_ROC-AUC": np.mean(cv_vol_roc),
+             "val_PR-AUC": average_precision_score(y_va, valid[COL_VOL]),
+             "val_ROC-AUC": roc_auc_score(y_va, valid[COL_VOL]), "PR-AUC_por_prova": list(np.round(cv_vol, 4))}
+tab_fabrica = pd.concat([tab_fabrica, pd.DataFrame([{"conjunto": c, **regra_vol} for c in CONJUNTOS])],
+                        ignore_index=True)
+alarme_vol_va = valid[COL_VOL] > LIM_VOL
+print(f"Regra de volume: alarme se volume > {LIM_VOL:.1f} m³ (escolhido no treino). Na validação: "
+      f"{100 * alarme_vol_va.mean():.0f} alarmes por 100 cestões, recall {recall_score(y_va, alarme_vol_va):.2f}, "
+      f"precisão {precision_score(y_va, alarme_vol_va, zero_division=0):.2f}")
 print(f"Referência de chute: PR-AUC = taxa de carga alta (treino {y_tr.mean():.3f}, validação {y_va.mean():.3f})")
 tab_fabrica.drop(columns="PR-AUC_por_prova").round(3)
 
@@ -359,7 +390,7 @@ tab_ajuste.round(3)
 # (abr–jun/2026):
 # - a **regressão logística** é a melhor na CV e a pior na validação;
 # - o **ajuste de hiperparâmetros**, feito na CV, quase nunca melhora a validação, e na Random
-#   Forest com 9 features piora bastante.
+#   Forest com as features finais piora bastante.
 #
 # As duas coisas têm a mesma causa: o treino é todo do regime antigo (antes de maio/2026, com
 # mais material pesado e mais ciclos), e a CV dentro dele só sabe premiar o que funciona nesse
@@ -391,8 +422,8 @@ from matplotlib.lines import Line2D
 leg = [Line2D([], [], marker="o", ls="", color=COR_ALGO[a], label=a) for a in ALGOS_REAIS]
 leg += [Line2D([], [], marker="o", ls="", color="#555", label="círculo: de fábrica"),
         Line2D([], [], marker="D", ls="", color="#555", label="losango: ajustado na CV"),
-        Line2D([], [], marker="o", ls="", markerfacecolor="#555", markeredgecolor="#555", label="cheio: conjunto final (9)"),
-        Line2D([], [], marker="o", ls="", markerfacecolor="white", markeredgecolor="#555", label="vazio: consenso (22)")]
+        Line2D([], [], marker="o", ls="", markerfacecolor="#555", markeredgecolor="#555", label=f"cheio: {NOME_FINAL}"),
+        Line2D([], [], marker="o", ls="", markerfacecolor="white", markeredgecolor="#555", label=f"vazio: {NOME_CONS}")]
 ax.legend(handles=leg, fontsize=8, frameon=False, loc="upper left")
 ax.set_xlim(*lim_ax); ax.set_ylim(*lim_ax)
 ax.set_xlabel("PR-AUC na validação cruzada temporal (treino: ago/2025–abr/2026)")
@@ -403,11 +434,54 @@ ax.set_title("Quem vai bem no passado não é quem vai bem no presente\n"
 salvar("03_cv_vs_validacao")
 
 # %% [markdown]
+# ## 7b. Desbalanceamento: pesos × sem peso × subamostragem (Guia de Modelagem §4.4)
+#
+# Só ~16% dos cestões têm carga alta. O Guia lista as opções; aqui elas são comparadas na Random
+# Forest de fábrica com as features finais, nas mesmas provas temporais e na validação:
+# - **sem peso**: o algoritmo puro;
+# - **pesos de classe** (`balanced_subsample`), a opção usada no projeto;
+# - **subamostragem** da classe "normal" até 1:1, feita **só dentro do treino de cada prova**
+#   (nunca na validação, que tem de manter a proporção real de eventos).
+#
+# Não usamos SMOTE: ele cria cestões sintéticos interpolando outros, o que pode gerar receitas
+# fisicamente impossíveis (Guia §4.4), e a PR-AUC não depende do limiar, que é ajustado à parte na
+# seção 9. Esta comparação **não muda a escolha** da seção 8; ela documenta a estratégia.
+
+# %%
+def rf_desbal(peso):
+    return montar(RandomForestClassifier(n_estimators=300, min_samples_leaf=5, class_weight=peso,
+                                         n_jobs=-1, random_state=SEED))
+
+def subamostrar(X, y, seed=SEED):
+    rng_s = np.random.default_rng(seed)
+    pos, neg = np.where(y == 1)[0], np.where(y == 0)[0]
+    keep = np.concatenate([pos, rng_s.choice(neg, size=len(pos), replace=False)])
+    return X.iloc[keep], y.iloc[keep]
+
+def nota_desbal(estrategia):
+    notas = []
+    for a, b in CV + [(np.arange(len(treino)), None)]:
+        Xa, ya = treino.iloc[a][FEAT_FINAL], y_tr.iloc[a]
+        if estrategia == "subamostragem 1:1 (no treino)":
+            Xa, ya = subamostrar(Xa, ya)
+        m = rf_desbal("balanced_subsample" if estrategia.startswith("pesos") else None).fit(Xa, ya)
+        if b is None:
+            p = m.predict_proba(valid[FEAT_FINAL])[:, 1]
+            return {"estrategia": estrategia, "CV_PR-AUC": np.mean(notas), "CV_PR-AUC_dp": np.std(notas),
+                    "val_PR-AUC": average_precision_score(y_va, p), "val_ROC-AUC": roc_auc_score(y_va, p),
+                    "chance_media_val": p.mean(), "taxa_real_val": y_va.mean()}
+        notas.append(average_precision_score(treino.iloc[b]["carga_alta"], m.predict_proba(treino.iloc[b][FEAT_FINAL])[:, 1]))
+
+tab_desbal = pd.DataFrame([nota_desbal(e) for e in ["sem peso", "pesos de classe (balanced_subsample)",
+                                                     "subamostragem 1:1 (no treino)"]]).set_index("estrategia")
+tab_desbal.round(3)
+
+# %% [markdown]
 # ## 8. A escada: subir de complexidade só se valer a pena (slide 33)
 #
 # **Regra:**
-# 1. Candidatos: cada algoritmo **de fábrica e ajustado**, nos conjuntos **final (9)** e
-#    **consenso (22)**. O conjunto sem histórico é o plano B (ver abaixo).
+# 1. Candidatos: cada algoritmo **de fábrica e ajustado**, nos conjuntos **final (6)** e
+#    **consenso (18)**. O conjunto sem histórico é o plano B (ver abaixo).
 # 2. Nota: PR-AUC na **validação**.
 # 3. Fica o **mais simples** (degrau mais baixo da escada; depois, menos features) cuja nota está
 #    a **no máximo 0,02** da melhor. "Se a logística quase empata com o boosting, a logística pode
@@ -585,6 +659,10 @@ dummy = algoritmos()["Baseline: maioria"].fit(treino[cols_A], y_tr)
 p_dummy = dummy.predict_proba(teste[cols_A])[:, 1]
 res.append({"plano": "baseline", "modelo": "Baseline: maioria", "cenario": "sempre 'normal'",
             "PR-AUC": average_precision_score(y_te, p_dummy), "ROC-AUC": 0.5, **medir(y_te, p_dummy, 0.5)})
+alarme_vol_te = teste[COL_VOL] > LIM_VOL
+res.append({"plano": "baseline", "modelo": "Baseline: regra de volume", "cenario": f"volume > {LIM_VOL:.1f} m³ (limiar do treino)",
+            "PR-AUC": average_precision_score(y_te, teste[COL_VOL]), "ROC-AUC": roc_auc_score(y_te, teste[COL_VOL]),
+            **medir(y_te, teste[COL_VOL].to_numpy(), np.nextafter(LIM_VOL, np.inf))})
 tab_teste = pd.DataFrame(res)
 tab_teste.round(3)
 
@@ -659,11 +737,17 @@ salvar("08_arvore_rasa_fluxograma")
 #
 # O modelo avaliado no teste aprendeu só com o treino. Para **uso real**, re-treinamos o mesmo
 # algoritmo, com os mesmos hiperparâmetros, em **treino + validação**: assim ele conhece o regime
-# pós-maio/2026. Esse modelo não tem nota própria (o teste já foi usado); os limiares são os da
-# validação e devem ser revistos quando houver dados novos.
+# pós-maio/2026. A análise de modelos mede esse modelo no teste (o teste vem depois de treino e
+# validação, então é legítimo). Os limiares são os da validação e devem ser revistos quando houver
+# dados novos.
+#
+# Guia de Modelagem §4.6: o `.joblib` guarda, **junto com o modelo**, a lista exata de features
+# (`features_`), os limiares (`limiares_`, sem arredondar) e a versão do scikit-learn
+# (`versao_sklearn_`). Continua sendo um `Pipeline`, então `predict_proba` funciona direto.
 #
 # Arquivos:
-# - `comparacao_algoritmos.csv`: seção 6 (fábrica) e seção 7 (ajustados), CV e validação;
+# - `comparacao_algoritmos.csv`: seção 6 (fábrica, com os três baselines) e seção 7 (ajustados), CV e validação;
+# - `desbalanceamento.csv`: seção 7b;
 # - `limiares_validacao.csv`: os três cenários de limiar, planos A e B;
 # - `resultado_teste.csv`: a conferência única no teste;
 # - `previsoes_validacao_teste.csv`: chance prevista por cestão (validação e teste), planos A e B;
@@ -679,6 +763,10 @@ for plano, esc, lims in [("A", esc_A, lim_A), ("B", esc_B, lim_B)]:
     final = modelos[(esc["conjunto"], esc["algoritmo"], esc["versao"])]
 
     producao = clone(final).fit(tv[cols], y_tv)
+    import sklearn
+    producao.features_ = list(cols)                       # Guia de Modelagem §4.6: modelo + features + limiar
+    producao.limiares_ = {c: float(v) for c, v in lims.items()}
+    producao.versao_sklearn_ = sklearn.__version__
     joblib.dump(producao, PASTA_SAIDA / f"modelo_final_plano{plano}.joblib")
     info[f"plano_{plano}"] = {"algoritmo": esc["algoritmo"], "versao": esc["versao"], "conjunto": esc["conjunto"],
                               "features": cols,
@@ -686,7 +774,7 @@ for plano, esc, lims in [("A", esc_A, lim_A), ("B", esc_B, lim_B)]:
                                                   if k in GRADES[esc["algoritmo"]] or f"modelo__{k}" in GRADES[esc["algoritmo"]]
                                                   or k in ("n_estimators", "class_weight", "C")},
                               "treinado_com": "treino + validacao",
-                              "limiares": {c: round(v, 4) for c, v in lims.items()}}
+                              "limiares": {c: float(v) for c, v in lims.items()}}   # sem arredondar
 (PASTA_SAIDA / "modelo_final.json").write_text(json.dumps(info, ensure_ascii=False, indent=2, default=str),
                                                 encoding="utf-8")
 
@@ -695,6 +783,7 @@ comp = pd.concat([tab_fabrica[tab_fabrica.algoritmo.str.startswith("Baseline")]
 comp.to_csv(PASTA_SAIDA / "comparacao_algoritmos.csv", index=False)
 tab_limiar.to_csv(PASTA_SAIDA / "limiares_validacao.csv", index=False)
 tab_teste.to_csv(PASTA_SAIDA / "resultado_teste.csv", index=False)
+tab_desbal.to_csv(PASTA_SAIDA / "desbalanceamento.csv")
 prev = pd.concat([valid[META[:3]].assign(prob_planoA=p_va_A, prob_planoB=p_va_B, carga_alta=y_va),
                   teste[META[:3]].assign(prob_planoA=p_te_A, prob_planoB=p_te_B, carga_alta=y_te)])
 prev.to_csv(PASTA_SAIDA / "previsoes_validacao_teste.csv", index=False)

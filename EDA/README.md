@@ -20,7 +20,7 @@ Os dois arquivos usam marcadores `#%%`, então também dá pra rodar célula por
 
 ### Arquivos gerados pelo pipeline (`transforma_dataset.py`)
 
-- `base.csv` — `infos_camadas` + `infos_materiais` + `dicionario_tipo_material` unidos (bloco A.0), já limpo (cd_baia, dt_hora_consumo, camadas de peso zero removidas, Densidade/Rendimento como número) e com as colunas `peso_t` e `volume_m3`.
+- `base.csv` — `infos_camadas` + `infos_materiais` + `dicionario_tipo_material` unidos (bloco A.0), já limpo (cd_baia, dt_hora_consumo, camadas abaixo de 2.000 kg removidas, peso zero incluído, Densidade/Rendimento como número) e com as colunas `peso_t` e `volume_m3`.
 - `dataset_modelagem.csv` — uma linha por cestão (corrida + carregamento 1 ou 2), com as features agregadas (peso, volume, número de camadas, proporção de material leve) e a variável resposta (`carga_alta`). É o dataset pronto pra modelagem.
 - `cestoes_acima_do_limite.csv` — gerado pela Parte B (ITEM 1), lista os cestões que passam da capacidade física (70 t ou 78 m³). Ideia do Lucas; o grupo decidiu **manter** — serve como lista operacional, propósito diferente do gráfico-resumo (Gráfico 10, ITEM 2).
 - `graficos/` — todos os PNGs gerados pela Parte B.
@@ -43,8 +43,12 @@ Organizada pelos itens do checklist de EDA do bootcamp:
 
 ### Decisões já tomadas (documentadas no código)
 
-- **Camadas com peso zero são removidas** (Parte A, bloco A.3). *Revisto após a apresentação para a EVCOMX:* antes eram imputadas pela mediana do material, mas peso zero significa que a camada estava na receita e o gancho não pegou o material, ou seja, a camada nunca entrou no cestão. São 2.030 linhas, em 1.394 cestões.
-- **A ordem leve → pesado → misto → leve se repete em vários ciclos dentro do mesmo cestão** (correção da EVCOMX). Ela não acontece uma vez só, com leve no fundo e no topo. Os gráficos 07 e 08 (fundo/meio/topo) só descrevem as pontas. A regra de montagem é analisada pelos gráficos 12 (sequência real das camadas) e 13 (carga alta por número de ciclos). Cestões com mais ciclos têm bem menos carga alta.
+- **Camadas abaixo de 2.000 kg são removidas, peso zero incluído** (Parte A, bloco A.3). A regra foi revista duas vezes com a EVCOMX:
+  1. *Após a apresentação da EDA:* antes, o peso zero era imputado pela mediana do material. Mas peso zero significa que a camada estava na receita e o gancho não pegou o material: a camada nunca entrou no cestão. Passou a ser removido.
+  2. *Resposta por e-mail (21/out/2026)* sobre as camadas de 10 kg e 100 kg: elas "também podem ser desconsideradas na montagem, dificilmente temos camadas com menos de 2000kg. Podem usar esse valor de corte." O corte passou de "peso = 0" para "peso < 2.000 kg".
+
+  O corte remove **5.180 camadas (12% do bruto), mas só 2,5% do peso dos cestões 1 e 2**: 2.030 com peso zero, 326 entre 1 e 99 kg (249 delas com exatamente 10 kg) e 2.824 entre 100 kg e 2 t. Saem camadas de 2.663 cestões, mas **nenhum cestão inteiro** sai (o script para com erro se isso acontecer). Nem tudo abaixo de 2 t parece gancho vazio: entre 100 kg e 2 t a mediana é ~1,6 t. Por isso a verificação mede o quanto o modelo depende do corte (`verificacao_validacao/README.md`, seção 5c-bis): a PR-AUC muda menos de 0,03 entre os cortes de 0, 100, 1.000 e 2.000 kg, dentro do ruído.
+- **A ordem leve → pesado → misto → leve se repete em vários ciclos dentro do mesmo cestão** (correção da EVCOMX). Ela não acontece uma vez só, com leve no fundo e no topo. Os gráficos 07 e 08 (fundo/meio/topo) só descrevem as pontas. A regra de montagem é analisada pelos gráficos 12 (sequência real das camadas) e 13 (carga alta por número de ciclos). Cestões com mais ciclos têm bem menos carga alta (cestão 1: 42% com 0 ou 1 ciclo, 7% com 5 ou mais; cestão 2: 26% contra 1%).
 
 - **Outliers são mantidos**, não removidos — ficam marcados em duas flags (`acima_capacidade`, regra de negócio; `outlier_estatistico`, critério IQR), porque a maioria dos outliers estatísticos no carregamento 2 são cestões pesados legítimos, não erro de medição.
 - **`num_materiais`** (quantos códigos de material diferentes entram no cestão) **foi incluída** como feature, como o Guia sugere (seção 8.2) — entra no `dataset_modelagem.csv` e na análise bivariada (point-biserial, boxplot, heatmap).
@@ -52,7 +56,7 @@ Organizada pelos itens do checklist de EDA do bootcamp:
 
 ### Pontos ainda em aberto
 
-- Confirmar com a EVCOMX se as camadas de peso muito baixo (ex.: 10 kg, 326 linhas) também são "gancho que não pegou". Por enquanto foram mantidas.
+- ~~Confirmar com a EVCOMX se as camadas de peso muito baixo (ex.: 10 kg, 326 linhas) também são "gancho que não pegou".~~ Respondido: sim, e o corte passa a ser 2.000 kg (ver acima).
 - Nos dados, o ciclo aparece tanto como L→P→M quanto como L→M→P. Confirmar se as duas ordens contam como ciclo.
 
 - Propriedades de RECC/RECG (sem densidade/energia/rendimento no dicionário): aguardando resposta do cliente.

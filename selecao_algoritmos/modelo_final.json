@@ -2,17 +2,14 @@
   "plano_A": {
     "algoritmo": "Random Forest",
     "versao": "fábrica",
-    "conjunto": "final (9)",
+    "conjunto": "final (6)",
     "features": [
       "densidade_media",
       "prop_peso_pesado",
       "peso_por_ciclo_t",
       "taxa_ca_ult5",
       "taxa_ca_ult10",
-      "max_bloco_leve_m3",
-      "prop_leve_base",
-      "prop_PACB",
-      "prop_PAEP"
+      "prop_PACB"
     ],
     "hiperparametros": {
       "class_weight": "balanced_subsample",
@@ -23,36 +20,33 @@
     },
     "treinado_com": "treino + validacao",
     "limiares": {
-      "não deixar passar (F2)": 0.3499,
-      "equilíbrio (F1)": 0.5373,
-      "evitar alarme falso (F0,5)": 0.7446
+      "não deixar passar (F2)": 0.4069341917806523,
+      "equilíbrio (F1)": 0.5419377911335369,
+      "evitar alarme falso (F0,5)": 0.7677382205391818
     }
   },
   "plano_B": {
     "algoritmo": "Random Forest",
-    "versao": "fábrica",
-    "conjunto": "final sem histórico (7)",
+    "versao": "ajustado",
+    "conjunto": "final sem histórico (4)",
     "features": [
       "densidade_media",
       "prop_peso_pesado",
       "peso_por_ciclo_t",
-      "max_bloco_leve_m3",
-      "prop_leve_base",
-      "prop_PACB",
-      "prop_PAEP"
+      "prop_PACB"
     ],
     "hiperparametros": {
       "class_weight": "balanced_subsample",
-      "max_depth": null,
+      "max_depth": 4,
       "max_features": "sqrt",
       "min_samples_leaf": 5,
       "n_estimators": 300
     },
     "treinado_com": "treino + validacao",
     "limiares": {
-      "não deixar passar (F2)": 0.3792,
-      "equilíbrio (F1)": 0.5077,
-      "evitar alarme falso (F0,5)": 0.6361
+      "não deixar passar (F2)": 0.5108617749092341,
+      "equilíbrio (F1)": 0.8061760010298654,
+      "evitar alarme falso (F0,5)": 0.8269966532134295
     }
   }
 }

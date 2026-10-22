@@ -1,0 +1,142 @@
+{
+  "gerado_por": "verificacao_validacao/verificacao_validacao.py",
+  "dados": {
+    "fonte": "EVCOMX, 4 arquivos CSV (original_dataset/)",
+    "periodo": "14/08/2025–04/08/2026 (data de início do cestão, horário de Brasília)",
+    "filtros": "camadas abaixo de 2.000 kg removidas (peso zero = gancho não pegou; corte de 2 t dado pela EVCOMX); duplicatas 100% iguais removidas; carregamento 3 (gusa) fora; ver EDA/README.md",
+    "unidade": "cestão (carregamentos 1 e 2 de cada corrida)",
+    "linhas": {
+      "cestões": 3501,
+      "corridas": 1799,
+      "cargas altas": 559
+    },
+    "arquivos": {
+      "original_dataset/VariavelResposta.csv": {
+        "sha256": "ce31df9475fdacf89bacd2be22a84b26f1f14cc9ef790651d67fe4e4355a4e5b",
+        "bytes": 36316
+      },
+      "original_dataset/dicionario_tipo_material.csv": {
+        "sha256": "29b5dad1bc41fb19a50890122b3bbc9e91f7cd9d99c490cd34136833fe2146ca",
+        "bytes": 837
+      },
+      "original_dataset/infos_camadas.csv": {
+        "sha256": "f771f1419993f49c1a26a2ee89c82f554ae4dbeceda69fec94fb50ce8f168c75",
+        "bytes": 3485702
+      },
+      "original_dataset/infos_materiais.csv": {
+        "sha256": "8afe7782c8ecdb390ee58d7513bac335e93c7204e8197b71bd540c7b2e6fc837",
+        "bytes": 794
+      },
+      "feature_selection/dataset_features_completo.csv": {
+        "sha256": "f86933d3d63ad2b471bfff41287d053d3ebba15be76fdc682418c8ea8a8299eb",
+        "bytes": 3144609
+      }
+    }
+  },
+  "particoes": {
+    "estrategia": "70/15/15 por corrida, em ordem de início (treino mais antigo, teste mais recente); os dois cestões de uma corrida sempre juntos",
+    "semente": 42,
+    "cestoes": {
+      "treino": 2473,
+      "validacao": 513,
+      "teste": 515
+    },
+    "periodos": {
+      "treino": "14/08/2025–25/04/2026",
+      "validacao": "25/04/2026–27/06/2026",
+      "teste": "24/06/2026–04/08/2026"
+    },
+    "validacao_cruzada": "5 provas temporais em janela crescente dentro do treino, por corrida (dobras_temporais)"
+  },
+  "modelo": {
+    "plano_A": {
+      "algoritmo": "Random Forest",
+      "versao": "fábrica",
+      "conjunto": "final (6)",
+      "features": [
+        "densidade_media",
+        "prop_peso_pesado",
+        "peso_por_ciclo_t",
+        "taxa_ca_ult5",
+        "taxa_ca_ult10",
+        "prop_PACB"
+      ],
+      "hiperparametros": {
+        "class_weight": "balanced_subsample",
+        "max_depth": null,
+        "max_features": "sqrt",
+        "min_samples_leaf": 5,
+        "n_estimators": 300
+      },
+      "treinado_com": "treino + validacao",
+      "limiares": {
+        "não deixar passar (F2)": 0.4069341917806523,
+        "equilíbrio (F1)": 0.5419377911335369,
+        "evitar alarme falso (F0,5)": 0.7677382205391818
+      }
+    },
+    "plano_B": {
+      "algoritmo": "Random Forest",
+      "versao": "ajustado",
+      "conjunto": "final sem histórico (4)",
+      "features": [
+        "densidade_media",
+        "prop_peso_pesado",
+        "peso_por_ciclo_t",
+        "prop_PACB"
+      ],
+      "hiperparametros": {
+        "class_weight": "balanced_subsample",
+        "max_depth": 4,
+        "max_features": "sqrt",
+        "min_samples_leaf": 5,
+        "n_estimators": 300
+      },
+      "treinado_com": "treino + validacao",
+      "limiares": {
+        "não deixar passar (F2)": 0.5108617749092341,
+        "equilíbrio (F1)": 0.8061760010298654,
+        "evitar alarme falso (F0,5)": 0.8269966532134295
+      }
+    }
+  },
+  "avaliacao": {
+    "metrica_principal": "PR-AUC (average_precision_score); ROC-AUC como segunda opinião; recall e precisão no corte",
+    "PR-AUC": {
+      "CV temporal (média)": 0.4126,
+      "CV temporal (dp)": 0.1091,
+      "validação": 0.4273,
+      "teste": 0.3912,
+      "teste, modelo para uso": 0.4038
+    },
+    "baselines": {
+      "chute (taxa) validação": 0.1793,
+      "chute (taxa) teste": 0.1456,
+      "regra só do histórico, validação": 0.3372,
+      "regra só do histórico, teste": 0.3575
+    },
+    "variacao_por_semente_validacao": {
+      "min": 0.4113,
+      "max": 0.4269,
+      "dp": 0.0036,
+      "sementes": 20
+    },
+    "criterios_de_aceitacao": {
+      "orcamento_alarmes_por_100": 40,
+      "recall_minimo": 0.7,
+      "status": "proposta do grupo, a confirmar com a EVCOMX"
+    }
+  },
+  "ambiente": {
+    "python": "3.13.16",
+    "sistema": "Linux-6.18.44-fc-v140-x86_64-with-glibc2.39",
+    "bibliotecas": {
+      "numpy": "2.5.3",
+      "pandas": "3.0.5",
+      "scikit-learn": "1.9.1",
+      "scipy": "1.18.1",
+      "matplotlib": "3.11.2",
+      "joblib": "1.6.0"
+    }
+  }
+}

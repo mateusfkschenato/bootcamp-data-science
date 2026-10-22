@@ -11,7 +11,7 @@
 #   - base.csv            (construído do zero no bloco A.0, depois
 #                           limpo e com as colunas novas: cd_baia,
 #                           dt_hora_consumo_estimada, sem as camadas
-#                           de peso zero,
+#                           abaixo de 2.000 kg (peso zero incluído),
 #                           Densidade/Rendimento como número, peso_t,
 #                           volume_m3)
 #   - dataset_modelagem.csv  (uma linha por cestão, com as features
@@ -157,35 +157,59 @@ print("base.csv atualizado e salvo.")
 
 
 # -----------------------------------------------------------------
-# A.3) Remoção das camadas com peso zero
+# A.3) Remoção das camadas abaixo de 2.000 kg (peso zero incluído)
 # -----------------------------------------------------------------
-# DECISÃO REVISTA após a apresentação para a EVCOMX (out/2026):
-# antes imputávamos o peso zero pela mediana do material. Isso estava
-# ERRADO. Segundo a EVCOMX, peso zero significa que a camada estava na
-# "receita" do cestão, mas o gancho não pegou o material - ou seja, a
-# camada NUNCA entrou no cestão. Imputar a mediana colocava no cestão
-# material que não existia (em média +2,3 t em 40% dos cestões).
-# Correto: remover essas linhas. Elas não são dado faltante, são
-# camadas que não aconteceram.
+# DECISÃO REVISTA DUAS VEZES com a EVCOMX (out/2026):
+#
+# 1) Após a apresentação da EDA: antes imputávamos o peso zero pela
+#    mediana do material. Isso estava ERRADO. Peso zero significa que a
+#    camada estava na "receita" do cestão, mas o gancho não pegou o
+#    material - a camada NUNCA entrou no cestão. Imputar a mediana
+#    colocava no cestão material que não existia (em média +2,3 t em 40%
+#    dos cestões). Correto: remover essas linhas.
+#
+# 2) Resposta do Guima por e-mail (21/out/2026), sobre as camadas de
+#    10 kg e 100 kg: "também podem ser desconsideradas na montagem,
+#    dificilmente temos camadas com menos de 2000kg. Podem usar esse
+#    valor de corte." Então o corte passou de "== 0" para "< 2.000 kg".
+#
+# Atenção: o corte remove a CAMADA, nunca o cestão inteiro. Nenhum
+# cestão fica vazio (todos têm pelo menos uma camada >= 2.000 kg).
+# Como nem todo registro abaixo de 2 t é "gancho vazio" (a mediana entre
+# 100 kg e 2 t é ~1,6 t), o efeito disso no modelo foi conferido na
+# verificação (ver verificacao_validacao/README.md).
 #%%
 import pandas as pd
 
+PESO_MINIMO_CAMADA_KG = 2000
+
 base = pd.read_csv("base.csv")
+peso = base["qt_peso_carregamento"]
+chave_cestao = ["cd_corrida", "nu_carregamento"]
 
-mascara_zero = base["qt_peso_carregamento"] == 0
-print("Camadas com peso zero (removidas):", mascara_zero.sum())
-print("  por carregamento:", base.loc[mascara_zero, "nu_carregamento"].value_counts().sort_index().to_dict())
-print("  cestões afetados:", base.loc[mascara_zero, ["cd_corrida", "nu_carregamento"]].drop_duplicates().shape[0])
+mascara_zero = peso == 0
+mascara_baixo = (peso > 0) & (peso < PESO_MINIMO_CAMADA_KG)
+mascara_remover = mascara_zero | mascara_baixo
 
-base = base.loc[~mascara_zero].reset_index(drop=True)
+print(f"Camadas removidas (peso < {PESO_MINIMO_CAMADA_KG} kg):", mascara_remover.sum(),
+      f"({mascara_remover.mean():.1%} das camadas)")
+print("  peso zero:", mascara_zero.sum())
+print("  entre 0 e 100 kg:", ((peso > 0) & (peso < 100)).sum(), "| exatamente 10 kg:", (peso == 10).sum())
+print("  entre 100 e 2.000 kg:", ((peso >= 100) & (peso < PESO_MINIMO_CAMADA_KG)).sum())
+print("  por carregamento:", base.loc[mascara_remover, "nu_carregamento"].value_counts().sort_index().to_dict())
+print("  cestões afetados:", base.loc[mascara_remover, chave_cestao].drop_duplicates().shape[0])
+print(f"  peso removido: {peso[mascara_remover].sum() / 1000:,.0f} t "
+      f"({peso[mascara_remover].sum() / peso.sum():.1%} do peso total)")
+
+cestoes_antes = base[chave_cestao].drop_duplicates().shape[0]
+base = base.loc[~mascara_remover].reset_index(drop=True)
+cestoes_depois = base[chave_cestao].drop_duplicates().shape[0]
 
 # ---------- Conferência ----------
-print("Peso zero restante:", (base["qt_peso_carregamento"] == 0).sum())
-# Ainda existem camadas com peso muito baixo (ex.: 10 kg). NÃO foram
-# removidas: não são zero, então em princípio o material entrou. Vale
-# confirmar com a EVCOMX se 10 kg também é "gancho que não pegou".
-print("Camadas com peso entre 0 e 100 kg (mantidas):",
-      ((base["qt_peso_carregamento"] > 0) & (base["qt_peso_carregamento"] < 100)).sum())
+print(f"Camadas abaixo de {PESO_MINIMO_CAMADA_KG} kg restantes:",
+      (base["qt_peso_carregamento"] < PESO_MINIMO_CAMADA_KG).sum())
+print("Cestões antes / depois do corte:", cestoes_antes, "/", cestoes_depois)
+assert cestoes_antes == cestoes_depois, "O corte apagou um cestão inteiro: rever a regra!"
 
 # ---------- Salvar ----------
 base.to_csv("base.csv", index=False)

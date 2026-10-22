@@ -118,15 +118,22 @@ print("Linhas totalmente iguais:", base.duplicated().sum())
 colunas_chave = ["cd_corrida", "nu_carregamento", "nu_camada"]
 print("Mesma corrida/carregamento/camada repetida:", base.duplicated(colunas_chave).sum())
 
-# %% PASSO 12 - Peso zerado
+# %% PASSO 12 - Peso zerado e camadas muito leves (< 2.000 kg)
 # O base.csv já vem SEM essas linhas (Parte A, bloco A.3 remove), então
 # a investigação é feita no arquivo bruto.
 # Explicação da EVCOMX: peso zero = a camada estava na receita, mas o
 # gancho não pegou o material. A camada nunca entrou no cestão.
+# Depois (e-mail do Guima, 21/out/2026): camadas de 10 kg e 100 kg também
+# podem ser desconsideradas; "dificilmente temos camadas com menos de
+# 2000kg". O corte usado na Parte A passou a ser < 2.000 kg.
 camadas_brutas = pd.read_csv("infos_camadas.csv", na_values=["null"])
-peso_zero = camadas_brutas[camadas_brutas["qt_peso_carregamento"] == 0]
+peso_bruto = camadas_brutas["qt_peso_carregamento"]
+peso_zero = camadas_brutas[peso_bruto == 0]
 print("Linhas com peso 0 no bruto (removidas na Parte A):", len(peso_zero))
 print(peso_zero["nu_carregamento"].value_counts())
+print("Linhas com peso < 2.000 kg no bruto (removidas na Parte A):", (peso_bruto < 2000).sum())
+print(pd.cut(peso_bruto, [-1, 0, 99, 999, 1999, 2999, peso_bruto.max()],
+             labels=["0", "1-99", "100-999", "1.000-1.999", "2.000-2.999", ">= 3.000"]).value_counts().sort_index())
 
 # %% PASSO 14 - A variável resposta está consistente?
 # Carga alta geral deve ser 1 quando carregamento 1 OU 2 teve carga alta.
@@ -317,7 +324,7 @@ flag_c2_sem_c2 = (
 ).sum()
 
 problemas = {
-    "Peso = 0, removidas (linhas)": (pd.read_csv("infos_camadas.csv", na_values=["null"])["qt_peso_carregamento"] == 0).sum(),
+    "Peso < 2 t (inclui zero), removidas (linhas)": (pd.read_csv("infos_camadas.csv", na_values=["null"])["qt_peso_carregamento"] < 2000).sum(),
     "Cestões acima de 70 t ou 78 m³ (cestões)": excedem,
     "Sem horário, fora do GUSL (linhas)": (base["dt_hora_consumo"].isnull() & ~eh_gusl).sum(),
     "Carreg. 3 com sucata, não GUSL (linhas)": ((base["nu_carregamento"] == 3) & ~eh_gusl).sum(),
@@ -490,7 +497,8 @@ print(num_camadas.groupby("nu_carregamento")["num_camadas"].describe())
 # REMOVIDAS na Parte A (bloco A.3), porque, segundo a EVCOMX, são
 # camadas que estavam na receita mas o gancho não pegou o material
 # (nunca entraram no cestão). Antes elas eram imputadas pela mediana do
-# material, o que estava errado.
+# material, o que estava errado. Pelo mesmo motivo, e com o corte dado
+# pela EVCOMX, saem também todas as camadas abaixo de 2.000 kg.
 
 #%%
 import pandas as pd
@@ -549,7 +557,7 @@ so_estatistico["tipo"] = np.where(
 )
 
 print(so_estatistico.groupby(["nu_carregamento", "tipo"]).size())
-# As camadas de peso zero foram removidas na Parte A (bloco A.3), então o peso de cada cestão agora é só o que de fato entrou. Confira a saída acima: cestões "muito abaixo da mediana" que aparecerem aqui são cestões realmente leves (pouca coisa pegou no gancho), não erro de registro.
+# As camadas abaixo de 2.000 kg (peso zero incluído) foram removidas na Parte A (bloco A.3), então o peso de cada cestão agora é só o que de fato entrou. Confira a saída acima: cestões "muito abaixo da mediana" que aparecerem aqui são cestões realmente leves (pouca coisa pegou no gancho), não erro de registro.
 
 # =====================================================================
 # ITEM 5 — FEATURES CRIADAS
@@ -668,7 +676,7 @@ mostrar("04_peso_contra_volume")
 # ---------- Posição relativa de cada camada (usado nos gráficos 14 e 15)
 cestoes = cestoes.sort_values(["cd_corrida", "nu_carregamento", "nu_camada"])
 # Usa a ORDEM da camada no cestão (1ª, 2ª, ...), não o número nu_camada:
-# depois de remover as camadas de peso zero a numeração fica com buracos.
+# depois de remover as camadas abaixo de 2.000 kg a numeração fica com buracos.
 ordem = cestoes.groupby(["cd_corrida", "nu_carregamento"]).cumcount() + 1
 total_camadas = cestoes.groupby(["cd_corrida", "nu_carregamento"])["nu_camada"].transform("size")
 cestoes["posicao"] = ordem / total_camadas

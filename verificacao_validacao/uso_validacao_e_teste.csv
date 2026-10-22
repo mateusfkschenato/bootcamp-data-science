@@ -1,0 +1,22 @@
+etapa,partição,o que foi feito,decidiu algo?
+feature selection §7,validação,"importância por permutação, medida na validação",sim: é 1 dos 6 votos
+feature selection §10,validação,curva desempenho × nº de features; cotovelo em 6,sim: quantas features ficam
+feature selection §11,validação,"comparação dos conjuntos (básico, filtro, RFE, L1, consenso...)",apoio à escolha
+feature selection §12,teste,6 modelos (2 algoritmos × 3 conjuntos); limiar da validação,não
+feature selection §13,validação e teste,mudança de regime mês a mês (médias e taxa de carga alta),não (descritivo)
+seleção §6 e §7,validação,"4 algoritmos × 3 conjuntos, de fábrica e ajustados","sim, junto com a §8"
+"seleção §8, 1ª rodada",teste,"RF ajustada com 22 features: teste 0,369 (nota de 'Transparência')",indireto: depois disso a versão de fábrica entrou como candidata
+seleção §8,validação,escada de modelos com IC 90%,"sim: algoritmo, versão e conjunto"
+seleção §7b,validação,desbalanceamento: pesos × sem peso × subamostragem,não (documenta a estratégia)
+seleção §9,validação,"limiares F2, F1 e F0,5",sim: os três cortes
+seleção §10,teste,"conferência única dos planos A e B, com a regra de volume",não
+análise §3 a §8,validação,"baselines, bootstrap, custo por k, calibração, faixas de risco",sim: mapa corte × k; fronteiras das faixas = os limiares
+análise §8 a §11,teste,"calibração e faixas, estabilidade, bootstrap contra a regra, custo, modelo para uso",não
+análise §8b,validação e teste,"Platt e isotônica ajustadas na validação, medidas no teste",não (proposta de exibição)
+análise §11b a §11d,validação e teste,"tabela única, segmentos, erros FN/FP, contribuições, regras",não
+verificação §1.4 e §1.6,validação,timing do histórico e variação por semente,não
+verificação §5 e §6,teste,distribuição das features; critérios e monitoramento (ilustração),não
+verificação §5b e §5c,validação e teste,walk-forward mensal; robustez a erros de pesagem,não
+verificação §5c-bis,validação e teste,"sensibilidade ao corte de peso da camada (0, 100, 1.000 e 2.000 kg)",não
+"todas as etapas, rodada de out/2026",validação e teste,pipeline inteiro refeito com o corte de 2.000 kg (resposta da EVCOMX); o teste foi visto de novo,"não: o corte veio da EVCOMX, não do teste; as escolhas seguem as regras fixadas antes"
+verificação §6.3 e §6.4,validação e teste,validação de domínio e de negócio (cenários),não

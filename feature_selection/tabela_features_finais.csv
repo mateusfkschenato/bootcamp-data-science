@@ -1,0 +1,7 @@
+feature,como_e_calculada,por_que_entra,quando_esta_disponivel,sinal (corr. no treino),votos (de 6)
+densidade_media,peso total ÷ volume estimado do cestão (volume = Σ peso da camada ÷ densidade do material),cestão 'fofo' (pouca tonelada por m³) ocupa mais altura para o mesmo peso,após a montagem do cestão (pesagem das camadas),-0.30,6
+prop_peso_pesado,peso das camadas de material pesado ÷ peso total,material pesado compacta a carga; pouco pesado = cestão volumoso,após a montagem do cestão,-0.32,6
+peso_por_ciclo_t,peso total ÷ nº de ciclos de montagem (ciclo = bloco de pesado),"ciclos 'grossos' = camadas pouco intercaladas, leve acumulado sem pesado em cima",após a montagem do cestão,+0.29,6
+taxa_ca_ult5,"% de corridas com carga alta entre as 5 corridas anteriores (shift(1), nunca a atual)",estado recente do forno: carga alta puxa carga alta,quando a corrida anterior termina (CONFIRMAR com a EVCOMX se já é conhecido na montagem),+0.26,6
+taxa_ca_ult10,% de corridas com carga alta entre as 10 corridas anteriores (shift(1)),"mesma ideia, janela mais longa e mais estável",quando a corrida anterior termina (CONFIRMAR com a EVCOMX),+0.23,6
+prop_PACB,peso do material PACB ÷ peso total,pacote de chaparia: material volumoso para o peso,após a montagem do cestão,+0.13,5
