@@ -315,7 +315,7 @@ ax.set_xlabel("PR-AUC (maior é melhor)")
 ax.set_xlim(0, max(0.6, d[["CV_PR-AUC", "val_PR-AUC"]].max().max() + 0.08))
 melhor_val = d.drop(index=[a for a in d.index if a.startswith("Baseline")])["val_PR-AUC"]
 ax.set_title(f"Todos os algoritmos superam o chute; na validação, a {melhor_val.idxmax()} lidera\n"
-             f"PR-AUC por algoritmo, conjunto final de 9 features, hiperparâmetros de fábrica",
+             f"PR-AUC por algoritmo, conjunto final de {len(FEAT_FINAL)} features, hiperparâmetros de fábrica",
              loc="left", fontsize=11)
 ax.set_ylim(-0.8, len(d) - 0.5)
 ax.legend(fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=2, frameon=False)
