@@ -1,0 +1,6 @@
+modelo,PR-AUC (re-treino mensal),min perdidos (re-treino mensal),alarmes/100
+"PRINCIPAL: média de 5 HGB, 120 features (histórico lag1)",0.4557213897829843,173.05,30.29126213592233
+Equilíbrio: 5 HGB 120 feat + 5 HGB 16 feat,0.4493034919538831,173.1,36.116504854368934
+PRINCIPAL + resultado do cestão 1 (se a EVCOMX confirmar),0.5942262958191864,141.2,26.990291262135923
+PRINCIPAL com histórico seguro (lag2),0.41776771759005016,148.20000000000002,22.330097087378643
+Referência: RF 6 features (plano A do grupo),0.3967887983126126,185.76666666666665,28.7378640776699

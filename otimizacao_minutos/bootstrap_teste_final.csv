@@ -1,0 +1,7 @@
+modelo,PR-AUC teste IC90,dif PR-AUC vs RF grupo,IC90 dif PR-AUC,dif minutos vs RF grupo,IC90 dif minutos
+"PRINCIPAL: média de 5 HGB, 120 features (histórico lag1)",[0.371 0.535],0.042623816451698875,[-0.011  0.101],-20.022808333333334,[-64.1  20. ]
+Equilíbrio: 5 HGB 120 feat + 5 HGB 16 feat,[0.363 0.52 ],0.0365796428540974,[-0.011  0.087],-10.063416666666672,[-48.4  23.5]
+ESCOLHIDO: principal + resultado do cestão 1 (confirmado pela EVCOMX),[0.437 0.688],0.1610957602742156,[0.079 0.241],-55.304075000000005,[-101.1  -12.3]
+PRINCIPAL com histórico seguro (lag2),[0.354 0.534],0.033552610446014514,[-0.025  0.093],-37.02089166666667,[-90.1   9.6]
+Referência: RF 6 features (plano A do grupo),[0.319 0.494],0.0,[0. 0.],0.0,[0. 0.]
+Regra: só o histórico (taxa_ca_ult5),[0.296 0.41 ],-0.05334748422963273,[-0.142  0.026],-37.88716666666667,[-75.1  -7.7]

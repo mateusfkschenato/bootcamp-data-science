@@ -1,0 +1,9 @@
+cenário,min perdidos / 30 dias,economia vs sem modelo %,ações / dia
+Sem modelo,174.79347826086956,0.0,0.0
+"Atual: alarme → reajuste (1 min, evita 100%)",103.27898550724638,40.91370768816201,2.5
+"Atual, se o alarme certo também custar 1 min",132.70289855072463,24.080177435068308,1.9746376811594204
+Cestão 2: pausa de 1 min (reduz 45%); cestão 1: reajuste,150.09492753623186,14.130132869017265,1.7463768115942029
+Cestão 2: pausa de 2 min (reduz 45%); cestão 1: reajuste,152.6123188405797,12.689923926787305,1.3442028985507246
+"Cestão 2: pausa de 1 min (reduz 30%, pessimista)",151.68677536231885,13.219430798250508,1.4275362318840579
+"Cestão 2: pausa de 1 min (reduz 60%, otimista)",141.7981884057971,18.876728230002282,1.923913043478261
+Só a pausa no cestão 2 (sem reajuste em lugar nenhum),172.27608695652174,1.440208942229948,0.40217391304347827

@@ -1,0 +1,13 @@
+from modelos import *
+rodar("RF6 grupo", RF(), FINAL6)
+rodar("RF S", RF(), S)
+rodar("RF S sem cw", RF(cw=None), S)
+rodar("HGB todas", HGB(), TODAS)
+rodar("HGB todas lr.015 it600", HGB(lr=0.015,it=600), TODAS)
+rodar("HGB todas leaf80", HGB(leaf=80), TODAS)
+rodar("HGB todas leaves4 it500", HGB(leaves=4,it=500), TODAS)
+rodar("HGB todas maxf0.3", HGB(maxf=0.3), TODAS)
+rodar("HGB todas l2=5", HGB(l2=5.0), TODAS)
+rodar("HGB todas cw balanced", HGB(cw="balanced"), TODAS)
+rodar("HGB S", HGB(), S)
+rodar("RF todas sem cw mf.2", RF(cw=None, mf=0.2), TODAS)

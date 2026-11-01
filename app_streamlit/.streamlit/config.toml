@@ -1,0 +1,18 @@
+# Identidade visual da EVCOMX: laranja forte, preto e branco.
+# Para trocar o laranja, mude primaryColor aqui e LARANJA em desenho.py.
+[theme]
+base = "light"
+primaryColor = "#FF6B00"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F3F3F3"
+textColor = "#111111"
+# Fonte da EVCOMX (Google Fonts) para todo o app, inclusive títulos
+font = "'Bai Jamjuree':https://fonts.googleapis.com/css2?family=Bai+Jamjuree:wght@400;500;600;700&display=swap, sans-serif"
+headingFont = "'Bai Jamjuree':https://fonts.googleapis.com/css2?family=Bai+Jamjuree:wght@400;500;600;700&display=swap, sans-serif"
+
+[theme.sidebar]
+backgroundColor = "#111111"
+secondaryBackgroundColor = "#222222"
+textColor = "#EDEDED"
+font = "'Bai Jamjuree':https://fonts.googleapis.com/css2?family=Bai+Jamjuree:wght@400;500;600;700&display=swap, sans-serif"
+headingFont = "'Bai Jamjuree':https://fonts.googleapis.com/css2?family=Bai+Jamjuree:wght@400;500;600;700&display=swap, sans-serif"
