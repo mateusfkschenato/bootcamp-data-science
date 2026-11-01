@@ -1,34 +1,42 @@
 # %% [markdown]
 # # Feature Engineering & Feature Selection — Predição de Carga Alta (EVCOMX)
 #
-# Segue duas fontes:
-# - **Aula de Feature Selection do bootcamp** (slides citados como "slide N");
-# - **Guia de Feature Engineering & Feature Selection da EVCOMX** (citado como "Guia §N").
+# **Conjunto oficial: 121 features** (as 84 candidatas da engenharia de features + 36 novas de
+# histórico, gusa líquida, ritmo do forno e regime recente + `carga_alta_c1`, o resultado do
+# cestão 1). É o conjunto do **modelo oficial do projeto: a média de 5 Gradient Boosting**.
 #
-# Roteiro (slide 33 + Guia §11):
+# > **Antes (out/2026), o conjunto era de 6 features**, escolhidas por votação entre seis métodos
+# > (filtro, RFE, L1, Elastic Net, permutação, Boruta) para uma Random Forest. Esse caminho está
+# > guardado em `historico_rf6/` (script, notebook, CSVs e gráficos). Ele foi superado quando a
+# > EVCOMX deu o critério de negócio (**menos minutos de forno perdidos**) e confirmou que o
+# > resultado do cestão 1 é conhecido a tempo de mexer no cestão 2.
+#
+# Segue a aula de Feature Selection, o Guia de FE/FS da EVCOMX e o Guia de Modelagem (§1 a §3).
 #
 # | Etapa | Seção |
 # |---|---|
-# | Unidade de análise e split 70/15/15 temporal | 1 |
+# | Base limpa da EDA, unidade de análise e split 70/15/15 temporal | 0–1 |
 # | Feature engineering: massa/volume, composição, ordem/ciclos, tempo, interações, contexto | 2 |
-# | Seleção na mão: IDs, constantes, "colas" | 3 |
-# | Filtro: correlação, Mann-Whitney, informação mútua | 4 |
-# | Multicolinearidade: correlação > 0,90 e VIF < 10 | 5 |
-# | Ponto de partida: modelo com todas as colunas | 6 |
-# | Embedded: L1, Elastic Net, importância e permutação | 7 |
-# | Wrapper: RFE com validação cruzada | 8 |
-# | Colunas de mentira (Boruta) | 9 |
-# | Votação, estabilidade e curva desempenho × nº de features | 10 |
-# | Comparação dos conjuntos na validação (inclui o baseline mínimo "só volume") | 11 |
-# | Features sugeridas pelo Guia de Modelagem, testadas à parte | 11b |
-# | Conferência no teste, uma única vez | 12 |
-# | Mudança de regime em maio/2026 | 13 |
-# | Respostas às perguntas do Guia §1.3 | 14 |
-# | Arquivos para a modelagem e tabela das features finais | 15 |
+# | Seleção na mão: IDs, constantes, vazamento → 84 candidatas | 3 |
+# | Features novas: histórico rico, gusa líquida, ritmo, regime recente, resultado do cestão 1 | 4 |
+# | Grupos de features | 5 |
+# | Filtro: correlação e informação mútua (e alarme de feature "boa demais") | 6 |
+# | Redundância: correlação > 0,90 (e por que não cortamos para árvores) | 7 |
+# | Embedded: permutação por grupo na validação | 8 |
+# | Wrapper: tirar um grupo de cada vez, no walk-forward, medindo minutos e PR-AUC | 9 |
+# | Mudança de regime em maio/2026 | 10 |
+# | Respostas às perguntas do Guia §1.3 | 11 |
+# | Arquivos para a modelagem e tabela das features | 12 |
+#
+# **Toda escolha aqui usa só treino + validação (o "dev").** O teste não é aberto nesta etapa.
 #
 # **Rode antes o `EDA/transforma_dataset.py`**: a feature selection parte do `EDA/base.csv`.
+# Leva ~15 min (a seção 9 treina 5 Gradient Boosting × 8 meses para cada conjunto testado).
 
 # %%
+import io
+import json
+import sys
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -36,18 +44,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.stats import pointbiserialr, mannwhitneyu, binomtest
+from scipy.stats import pointbiserialr, mannwhitneyu
 
-from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LogisticRegression, LogisticRegressionCV, LinearRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.feature_selection import mutual_info_classif, RFECV, RFE
-from sklearn.inspection import permutation_importance
-from sklearn.model_selection import StratifiedGroupKFold, cross_val_score
-from sklearn.metrics import (roc_auc_score, average_precision_score, f1_score, recall_score,
-                             precision_score, accuracy_score, confusion_matrix)
+from sklearn.feature_selection import mutual_info_classif
+from sklearn.metrics import average_precision_score
+
+RAIZ = next(p for p in [Path.cwd(), *Path.cwd().parents]
+            if (p / "EDA").is_dir() and (p / "original_dataset").is_dir())
+sys.path.insert(0, str(RAIZ))
+from comum.protocolo import (MESES_CUSTO, VARIANTES, FINAL6, familia, prever, oof_dev, resumo_wf, RF6, carregar)
 
 SEED = 42
 pd.set_option("display.width", 170)
@@ -71,9 +76,7 @@ AZUL, VERMELHO, CINZA, LARANJA, VERDE = "#2b6cb0", "#c0392b", "#7f8c8d", "#dd8a2
 # A variável resposta vem de `original_dataset/` (somente leitura).
 
 # %%
-# Acha a raiz do repositório subindo pastas (funciona rodando de feature_selection/ ou da raiz)
-RAIZ = next(p for p in [Path.cwd(), *Path.cwd().parents]
-            if (p / "EDA").is_dir() and (p / "original_dataset").is_dir())
+# A raiz do repositório foi achada na célula de cima (funciona rodando de feature_selection/ ou da raiz)
 PASTA_EDA, PASTA_BRUTOS = RAIZ / "EDA", RAIZ / "original_dataset"
 PASTA_SAIDA = RAIZ / "feature_selection"
 PASTA_GRAF = PASTA_SAIDA / "graficos"
@@ -120,9 +123,9 @@ print("Sem densidade / sem classe:", cam.densidade_t_m3.isna().sum(), "/", cam.t
 # **Split 70/15/15, temporal, definido pelo professor.** As 70% corridas mais antigas são o
 # treino, as 15% seguintes a validação e as 15% mais recentes o teste. Os dois cestões da mesma
 # corrida ficam sempre do mesmo lado. Split aleatório vazaria informação do futuro (Guia §2.2).
-# - **Treino:** onde todos os métodos de seleção rodam.
-# - **Validação:** onde escolhemos quantas features ficam e o limiar de decisão.
-# - **Teste:** usado uma única vez, no final (slide 30).
+# - **Treino + validação (o "dev"):** onde tudo é escolhido. Os filtros rodam só no treino; a
+#   permutação mede na validação; a decisão final (seção 9) usa o walk-forward mensal no dev.
+# - **Teste:** não é aberto nesta etapa (é aberto uma única vez, na seleção de algoritmos).
 
 # %%
 chave = ["cd_corrida", "nu_carregamento"]
@@ -298,8 +301,9 @@ feat["fim_de_semana"] = (feat["dia_semana"] >= 5).astype(int)
 # **Histórico recente:** taxa de carga alta das últimas N corridas, com `shift(1)` para não usar a
 # corrida atual (sem vazamento).
 #
-# **`carga_alta_c1` (se o cestão 1 teve carga alta) fica de fora por enquanto:** o Guia pede para
-# discutir o timing. Testamos seu efeito à parte na seção 11.
+# **`carga_alta_c1` (se o cestão 1 teve carga alta)** é calculada aqui, mas só entra no conjunto na
+# seção 4: o Guia pede para discutir o timing, e a EVCOMX confirmou em 31/out/2026 que o resultado do
+# cestão 1 é conhecido quando o cestão 2 ainda pode ser mexido.
 
 # %%
 feat["vol_x_prop_leve"] = feat["volume_m3_total"] * feat["prop_leve"]
@@ -346,7 +350,7 @@ c1_alvo = alvo[alvo.nu_carregamento == 1].set_index("cd_corrida")["carga_alta"]
 
 df = feat.merge(alvo, on=chave, how="inner")
 df["conjunto"] = df["cd_corrida"].map(conjunto_corrida)
-df["carga_alta_c1"] = np.where(df.eh_cestao_2 == 1, df["cd_corrida"].map(c1_alvo), 0)   # só para a seção 11
+df["carga_alta_c1"] = np.where(df.eh_cestao_2 == 1, df["cd_corrida"].map(c1_alvo), 0)   # entra na seção 4
 print("Cestões:", len(df), "| sem camadas do cestão 2 mas com carga alta nele (fora):",
       int(alvo[(alvo.nu_carregamento == 2) & (alvo.carga_alta == 1)]
           .merge(feat[chave], on=chave, how="left", indicator=True)["_merge"].eq("left_only").sum()))
@@ -383,451 +387,336 @@ print(f"\nSobraram {len(candidatas)} candidatas")
 print("Com vazios no treino (% ):", (treino[candidatas].isna().mean() * 100).loc[lambda s: s > 0].round(1).to_dict())
 
 # %% [markdown]
-# ## 4. Filtro (slides 18–21, Guia §7.1)
+# ### 3b. As 84 candidatas da engenharia de features
 #
-# Cada coluna recebe uma nota sozinha:
-# - **correlação point-biserial** com o alvo (direção e força linear);
-# - **Mann-Whitney U**: a distribuição da feature é diferente entre cestões com e sem carga alta?
-#   Com ~70 testes, usamos a correção de Bonferroni (p × nº de testes < 0,05) para não "achar"
-#   diferença por sorte;
-# - **informação mútua**: enxerga relações curvas que a correlação perde (slide 20).
-#
-# Voto do filtro: Mann-Whitney significativo (Bonferroni) **ou** entre as 10 maiores informações mútuas.
+# A partir daqui, as features "da receita" estão prontas. As 84 vão para o
+# `dataset_features_completo.csv` junto com as novas da seção 4. Antes disso, passam por um CSV em
+# memória: é o mesmo arredondamento do arquivo que gerou o modelo oficial, então o modelo sai
+# **idêntico** (a seção 12 confere).
 
 # %%
-X_tr_full = treino[candidatas]
-y_tr = treino["carga_alta"]
-mediana_tr = X_tr_full.median()
-filtro = []
-for c in candidatas:
-    x = X_tr_full[c].fillna(mediana_tr[c])
-    r_, _ = pointbiserialr(y_tr, x)
-    _, p_mw = mannwhitneyu(x[y_tr == 0], x[y_tr == 1])
-    filtro.append((c, r_, p_mw))
-filtro = pd.DataFrame(filtro, columns=["feature", "corr", "p_mannwhitney"]).set_index("feature")
-filtro["p_bonferroni"] = (filtro["p_mannwhitney"] * len(candidatas)).clip(upper=1)
-filtro["info_mutua"] = mutual_info_classif(X_tr_full.fillna(mediana_tr), y_tr, random_state=SEED)
-top_mi = set(filtro["info_mutua"].nlargest(10).index)
-filtro["voto_filtro"] = (filtro["p_bonferroni"] < 0.05) | filtro.index.isin(top_mi)
-filtro = filtro.reindex(filtro["corr"].abs().sort_values(ascending=False).index)
-print(f"|corr| > 0,1: {(filtro['corr'].abs() > 0.1).sum()} | Mann-Whitney (Bonferroni) significativo: "
-      f"{(filtro['p_bonferroni'] < 0.05).sum()} | voto do filtro: {filtro['voto_filtro'].sum()}")
-discordam = filtro[(filtro["p_bonferroni"] < 0.05) != (filtro["corr"].abs() > 0.1)]
-print("Correlação e Mann-Whitney discordam em:", list(discordam.index))
-print(filtro.head(25).round(4).to_string())
-
-fig, axes = plt.subplots(1, 2, figsize=(12, 7.5))
-top = filtro.head(20)
-axes[0].barh(top.index[::-1], top["corr"][::-1], color=np.where(top["corr"][::-1] > 0, VERMELHO, AZUL))
-axes[0].axvline(0, color="k", lw=0.8)
-axes[0].set_title("Correlação com carga alta (top 20)\nvermelho = aumenta o risco", loc="left")
-t_mi = filtro["info_mutua"].nlargest(20)
-axes[1].barh(t_mi.index[::-1], t_mi[::-1], color=VERDE)
-axes[1].set_title("Informação mútua (top 20)", loc="left")
-salvar("01_filtro_correlacao_info_mutua")
+meta = ["cd_corrida", "nu_carregamento", "conjunto", "inicio"]
+_buf = io.StringIO()
+df[meta + candidatas + ["carga_alta_c1", "carga_alta"]].to_csv(_buf, index=False)
+_buf.seek(0)
+d = pd.read_csv(_buf)
+print("84 candidatas:", len(candidatas) == 84, "| tabela:", d.shape)
 
 # %% [markdown]
-# ## 5. Multicolinearidade (Guia §7.2)
+# ## 4. Features novas (depois do critério de minutos da EVCOMX, out/2026)
 #
-# Features que dizem a mesma coisa inflam a importância do mesmo fenômeno e confundem modelos
-# lineares. Regra do Guia: **entre duas features correlacionadas, fica a mais correlacionada com a
-# carga alta**; e ao final todas com **VIF < 10** (VIF = 1 / (1 − R²) da regressão de cada feature
-# contra as outras; calculado à mão, sem statsmodels).
+# Na rodada da Random Forest, o histórico era só `taxa_ca_ult5/10/20`. A otimização por minutos
+# testou 168 configurações (registro em `otimizacao_minutos/experimentos/`) e ficaram **36 features
+# novas** em quatro famílias, mais o resultado do cestão 1:
 #
-# Aqui há muita dependência estrutural (ex.: prop. leve + misto + pesado = 1; a proporção de cada
-# classe é a soma das proporções dos seus materiais). Remover sempre "a de maior VIF" acabava
-# jogando fora justamente as features mais preditivas. Por isso aplicamos a regra do Guia em ordem
-# de relevância:
-# 1. pares com |correlação| > 0,90: sai a de menor |correlação| com a carga alta (em empate técnico,
-#    diferença < 0,02, fica a mais simples de explicar, ex.: `peso_t_total` em vez de `energia_estimada_mwh`);
-# 2. percorremos as features **da mais para a menos correlacionada com a carga alta**; cada uma só
-#    entra se as que já entraram não a explicam (R² < 0,9, ou seja, VIF < 10);
-# 3. limpeza: enquanto houver VIF > 10, pegamos a feature de maior VIF e as 3 que mais a explicam;
-#    sai a menos correlacionada com a carga alta entre essas 4;
-# 4. repescagem: as que ficaram de fora voltam, na mesma ordem, se não fizerem nenhum VIF passar de 10.
+# | Família | Features | Por que | Quando está disponível |
+# |---|---|---|---|
+# | Histórico rico | `h_taxa3/5/10/20/50`, `h_ewm2/5/15`, `h_ult1`, `h_ult1_c1`, `h_ult2_c2`, `h_desde_ultima`, `h_min_parada10`, `h_taxa_8h/24h` | carga alta puxa carga alta; janelas curtas reagem rápido, longas são estáveis | quando a corrida anterior termina (`shift(1)`, nunca a atual) |
+# | Gusa líquida | `gusl_t`, `tem_gusl`, `carga3_solida_t` | a gusa do carregamento 3 muda o espaço e o banho no forno | na programação da corrida |
+# | Ritmo do forno | `gap_corrida_min`, `gap_c2ant_c1_min`, `h_n_corridas_8h/24h` | forno acelerado tem menos tempo de fusão entre cestões | no início da montagem |
+# | Regime recente (`rel_`, `rel2_`) | a feature menos a média dos 100 cestões anteriores (ou dos 60 do mesmo número de cestão) | depois de maio/26 o perfil mudou; o que importa é o cestão ser "fofo para a época" | após a montagem (usa só features passadas, nunca o alvo) |
+# | **Resultado do cestão 1** | `carga_alta_c1` (no cestão 1 vale 0; `eh_cestao_2` separa os casos) | o cestão 2 dá **menos** carga alta quando o 1 deu (10,6% × 19,2% no dev) | **a EVCOMX confirmou (31/out/2026)** que é conhecido quando o cestão 2 ainda pode ser mexido |
+#
+# Também se calculam versões `_lag2` do histórico (pulando a corrida anterior), para o caso de o
+# resultado dela ainda não ser conhecido. A duração da parada (`min_parada`) vai junto **só para
+# medir minutos; não é feature**.
 
 # %%
-alvo_corr = filtro["corr"].abs()
-X_pad = X_tr_full.fillna(mediana_tr)
-X_pad = (X_pad - X_pad.mean()) / X_pad.std()
+b = pd.read_csv(arq_base)
+r = resposta.copy()
 
-def r2_contra(col, outras):
-    return LinearRegression().fit(X_pad[outras], X_pad[col]).score(X_pad[outras], X_pad[col]) if outras else 0.0
+# ---- alvo e duração da parada (duração NÃO é feature; só para medir minutos)
+alvo_min = pd.concat([
+    r.assign(nu_carregamento=1.0, seg=r.qt_segundos_duracao_parada_carregamento_1),
+    r.assign(nu_carregamento=2.0, seg=r.qt_segundos_duracao_parada_carregamento_2)])[chave + ["seg"]]
+d = d.merge(alvo_min, on=chave, how="left")
+d["min_parada"] = d["seg"] / 60
+d = d.drop(columns="seg")
+d["t"] = pd.to_datetime(d["inicio"], utc=True)
 
-def calcular_vif(cols):
-    return pd.Series({c: 1 / max(1 - r2_contra(c, [o for o in cols if o != c]), 1e-12) for c in cols})
+# ---- tempos de montagem por cestão
+b["t"] = pd.to_datetime(b["dt_hora_consumo"], utc=True, format="mixed")
+tc = b[b.nu_carregamento < 3].groupby(chave)["t"].agg(t_ini="min", t_fim="max").reset_index()
+d = d.merge(tc, on=chave, how="left")
 
-# 1. pares com |r| > 0,90 (empate técnico, diferença < 0,02 na correlação com o alvo: fica a básica)
-BASICAS = ["peso_t_total", "volume_m3_total", "densidade_media", "prop_peso_pesado", "prop_leve",
-           "n_ciclos", "num_camadas", "num_materiais", "peso_pesado", "peso_leve"]
-corr_abs = X_tr_full.corr().abs()
-pares = (corr_abs.where(np.triu(np.ones(corr_abs.shape, dtype=bool), k=1))
-         .stack().loc[lambda s: s > 0.90].sort_values(ascending=False))
-fora_multi = {}
-for (a, b), v in pares.items():
-    if a in fora_multi or b in fora_multi:
-        continue
-    if abs(alvo_corr[a] - alvo_corr[b]) < 0.02 and (a in BASICAS) != (b in BASICAS):
-        fica = a if a in BASICAS else b                     # empate: fica a mais simples de explicar
-    else:
-        fica = a if alvo_corr[a] >= alvo_corr[b] else b
-    sai = b if fica == a else a
-    fora_multi[sai] = f"|r|={v:.2f} com {fica}"
-print(f"1) Pares com |r| > 0,90 -> saem {len(fora_multi)}:")
-print(pd.Series(fora_multi).to_string())
+# ---- gusa líquida (carregamento 3) da corrida
+gu = b[(b.nu_carregamento == 3) & (b.cd_codigo_material == "GUSL")].groupby("cd_corrida")["peso_t"].sum()
+d["gusl_t"] = d["cd_corrida"].map(gu).fillna(0)
+d["tem_gusl"] = (d["gusl_t"] > 0).astype(int)
+outro3 = b[(b.nu_carregamento == 3) & (b.cd_codigo_material != "GUSL")].groupby("cd_corrida")["peso_t"].sum()
+d["carga3_solida_t"] = d["cd_corrida"].map(outro3).fillna(0)
 
-# 2. entrada em ordem de relevância
-ordem_relev = [c for c in alvo_corr.sort_values(ascending=False).index if c not in fora_multi]
-mantidas = []
-for c in ordem_relev:
-    r2 = r2_contra(c, mantidas)
-    if r2 > 0.9:
-        fora_multi[c] = f"explicada pelas mais relevantes (VIF {1 / max(1 - r2, 1e-12):.0f})"
-    else:
-        mantidas.append(c)
+# ---- ordem das corridas e histórico
+corr = (d[d.nu_carregamento == 1][["cd_corrida", "t_ini", "t_fim"]]
+        .rename(columns={"t_ini": "c1_ini", "t_fim": "c1_fim"}))
+c2 = d[d.nu_carregamento == 2][["cd_corrida", "t_fim"]].rename(columns={"t_fim": "c2_fim"})
+corr = corr.merge(c2, on="cd_corrida", how="left")
+corr = corr.merge(r[["cd_corrida", "is_carga_alta", "is_carga_alta_carregamento_1",
+                     "is_carga_alta_carregamento_2", "qt_segundos_parada_carga_alta"]], on="cd_corrida")
+corr = corr.sort_values("c1_ini").reset_index(drop=True)
+corr["ordem"] = np.arange(len(corr))
 
-# 3. limpeza: pega a feature de maior VIF e as 3 que mais a explicam; sai a menos relevante das 4
-while True:
-    vif = calcular_vif(mantidas)
-    if vif.max() <= 10:
-        break
-    lider = vif.idxmax()
-    outras = [o for o in mantidas if o != lider]
-    coefs = pd.Series(LinearRegression().fit(X_pad[outras], X_pad[lider]).coef_, index=outras).abs()
-    grupo = [lider] + list(coefs.nlargest(3).index)
-    sai = alvo_corr[grupo].idxmin()
-    fora_multi[sai] = f"limpeza de VIF (grupo de {lider}, VIF {vif[lider]:.0f})"
-    mantidas.remove(sai)
+y_corr = corr["is_carga_alta"].astype(float)
+yprev = y_corr.shift(1)          # corrida anterior
+for lag_nome, yy in [("", yprev), ("_lag2", y_corr.shift(2))]:   # _lag2 = versão "segura": pula a corrida anterior
+    for n in [3, 5, 10, 20, 50]:
+        corr[f"h_taxa{n}{lag_nome}"] = yy.rolling(n, min_periods=1).mean()
+    for hl in [2, 5, 15]:
+        corr[f"h_ewm{hl}{lag_nome}"] = yy.ewm(halflife=hl, min_periods=1).mean()
+corr["h_ult1"] = yprev
+corr["h_ult2_c2"] = corr["is_carga_alta_carregamento_2"].shift(1)  # cestão 2 da corrida anterior
+corr["h_ult1_c1"] = corr["is_carga_alta_carregamento_1"].shift(1)
+cnt, ultimo = [], None                                              # corridas desde a última carga alta
+for i, v in enumerate(y_corr):
+    cnt.append(np.nan if ultimo is None else i - ultimo)
+    if v == 1:
+        ultimo = i
+corr["h_desde_ultima"] = pd.Series(cnt).clip(upper=50)
+corr["h_min_parada10"] = (corr["qt_segundos_parada_carga_alta"] / 60).shift(1).rolling(10, min_periods=1).sum()
 
-# 4. repescagem
-voltaram = []
-for c in [c for c in ordem_relev if c not in mantidas]:
-    if calcular_vif(mantidas + [c]).max() <= 10:
-        mantidas.append(c)
-        voltaram.append(c)
-        fora_multi.pop(c, None)
-print("\n2-3) Saem por VIF (explicadas por outras mais relevantes):")
-print(pd.Series({k: v for k, v in fora_multi.items() if "VIF" in v}).to_string())
-print("\n4) Voltaram na repescagem:", voltaram)
+# janela de tempo: taxa de carga alta nas corridas que COMEÇARAM nas 24 h / 8 h antes (excluindo a atual)
+ts = corr["c1_ini"].values.astype("datetime64[s]").astype(np.int64)
+yy = y_corr.values
+for horas in [8, 24]:
+    w_s = horas * 3600
+    taxa, nn, j0 = [], [], 0
+    for i in range(len(corr)):
+        while ts[j0] < ts[i] - w_s:
+            j0 += 1
+        seg = yy[j0:i]
+        taxa.append(seg.mean() if len(seg) else np.nan)
+        nn.append(len(seg))
+    corr[f"h_taxa_{horas}h"] = taxa
+    corr[f"h_n_corridas_{horas}h"] = nn
 
-candidatas_finais = [c for c in candidatas if c in mantidas]
-vif_final = calcular_vif(candidatas_finais).sort_values(ascending=False)
-print(f"\nSobrevivem {len(candidatas_finais)} features; maior VIF: {vif_final.max():.1f}")
-print("As 10 mais correlacionadas com a carga alta que ficaram:",
-      list(alvo_corr[candidatas_finais].sort_values(ascending=False).index[:10]))
-descartes.update({k: f"colinear: {v}" for k, v in fora_multi.items()})
+# ritmo do forno
+corr["gap_corrida_min"] = (corr["c1_ini"] - corr["c1_ini"].shift(1)).dt.total_seconds() / 60
+corr["gap_c2ant_c1_min"] = (corr["c1_ini"] - corr["c2_fim"].shift(1)).dt.total_seconds() / 60
+
+hcols = [c for c in corr.columns if c.startswith("h_")] + ["gap_corrida_min", "gap_c2ant_c1_min", "ordem"]
+d = d.merge(corr[["cd_corrida"] + hcols], on="cd_corrida", how="left")
+
+# ---- composição relativa ao "regime" recente (média móvel das features dos 100 cestões anteriores)
+d = d.sort_values(["t_ini"]).reset_index(drop=True)
+for c in ["densidade_media", "prop_peso_pesado", "peso_por_ciclo_t", "peso_t_total", "volume_m3_total",
+          "prop_leve", "n_ciclos"]:
+    m = d[c].shift(1).rolling(100, min_periods=20).mean()
+    d[f"rel_{c}"] = d[c] - m
+    m2 = d.groupby("nu_carregamento")[c].transform(lambda s: s.shift(1).rolling(60, min_periods=15).mean())
+    d[f"rel2_{c}"] = d[c] - m2
+
+d["mes"] = d["t"].dt.tz_convert("America/Sao_Paulo").dt.strftime("%Y-%m")
+d = d.copy()
+
+NOVAS = ["gusl_t", "tem_gusl", "carga3_solida_t", "h_taxa3", "h_taxa5", "h_taxa10", "h_taxa20", "h_taxa50",
+         "h_ewm2", "h_ewm5", "h_ewm15", "h_ult1", "h_ult2_c2", "h_ult1_c1", "h_desde_ultima", "h_min_parada10",
+         "h_taxa_8h", "h_n_corridas_8h", "h_taxa_24h", "h_n_corridas_24h", "gap_corrida_min", "gap_c2ant_c1_min",
+         "rel_densidade_media", "rel2_densidade_media", "rel_prop_peso_pesado", "rel2_prop_peso_pesado",
+         "rel_peso_por_ciclo_t", "rel2_peso_por_ciclo_t", "rel_peso_t_total", "rel2_peso_t_total",
+         "rel_volume_m3_total", "rel2_volume_m3_total", "rel_prop_leve", "rel2_prop_leve", "rel_n_ciclos", "rel2_n_ciclos"]
+F_PRINCIPAL = candidatas + NOVAS                                    # 120 (a ordem das colunas é a do modelo oficial)
+F_OFICIAL = F_PRINCIPAL + ["carga_alta_c1"]                         # 121
+HIST_LAG1 = [c for c in F_PRINCIPAL if c.startswith(("taxa_ca_ult", "h_")) and not c.startswith("h_n_corridas")] + \
+            ["h_n_corridas_8h", "h_n_corridas_24h"]
+F_LAG2 = [c for c in F_PRINCIPAL if c not in HIST_LAG1] + [f"h_taxa{n}_lag2" for n in [3, 5, 10, 20, 50]] + \
+         [f"h_ewm{h}_lag2" for h in [2, 5, 15]]
+_ant = RAIZ / "otimizacao_minutos" / "features_finais.json"
+if _ant.exists():
+    _j = json.load(open(_ant, encoding="utf-8"))
+    assert _j["features_principal"] == F_PRINCIPAL and _j["features_lag2"] == F_LAG2, "listas diferentes da otimização"
+print(f"{len(NOVAS)} novas | principal {len(F_PRINCIPAL)} | oficial {len(F_OFICIAL)} | lag2 {len(F_LAG2)} | tabela {d.shape}")
+
+c2d = d[d.eh_cestao_2 == 1]
+for parte, nome in [(c2d[c2d.conjunto != "teste"], "dev")]:
+    print(f"Cestão 2 no {nome}: carga alta {parte[parte.carga_alta_c1 == 1].carga_alta.mean():.1%} quando o cestão 1 deu, "
+          f"{parte[parte.carga_alta_c1 == 0].carga_alta.mean():.1%} quando não deu")
 
 # %% [markdown]
-# ## 6. Ponto de partida: todas as colunas (slide 32)
+# ## 5. Grupos de features
 #
-# - **Métrica de seleção: PR-AUC** (average precision). Só ~16% dos cestões têm carga alta; um
-#   modelo que sempre diz "não" acerta 84%, então acurácia engana (Guia §9.1). A PR-AUC de um
-#   chute é a própria taxa de positivos.
-# - Métricas com limiar (recall, precisão, F1) entram na comparação final, com o limiar escolhido
-#   na validação.
-# - Dois algoritmos fixos, os mesmos em todas as comparações (Guia §9.2): regressão logística e
-#   Random Forest.
-# - "Todas as colunas" = as candidatas da seção 3 (antes da multicolinearidade).
+# Com 121 colunas, a pergunta útil não é "qual coluna", e sim **"qual tipo de informação"**. Cada
+# feature cai em exatamente um grupo; a seleção (seções 8 e 9) e a interpretação trabalham com eles.
 
 # %%
-X_tr, X_va, X_te = treino[candidatas_finais], valid[candidatas_finais], teste[candidatas_finais]
-y_va, y_te = valid["carga_alta"], teste["carga_alta"]
-grupos = treino["cd_corrida"]
-cv = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=SEED)
-splits = list(cv.split(X_tr, y_tr, grupos))
+def _grupo(c):
+    if c == "carga_alta_c1":
+        return "resultado do cestão 1"
+    if c in ("gusl_t", "tem_gusl", "carga3_solida_t"):
+        return "gusa líquida"
+    if c in ("gap_corrida_min", "gap_c2ant_c1_min", "h_n_corridas_8h", "h_n_corridas_24h"):
+        return "ritmo do forno"
+    if c.startswith(("taxa_ca_ult", "h_")):
+        return "histórico do forno"
+    if c.startswith(("rel_", "rel2_")):
+        return "regime recente (rel_)"
+    if c in ("eh_cestao_2", "volume_c1_m3", "peso_c1_t", "vol_acumulado_m3", "delta_peso_12_t", "mudou_composicao"):
+        return "contexto do cestão 1 (receita)"
+    if c in ("tempo_montagem_min", "intervalo_medio_min", "hora", "turno_A", "turno_B", "dia_semana", "fim_de_semana"):
+        return "tempo e turno"
+    if c.startswith("prop_") and c not in ("prop_leve", "prop_vol_leve", "prop_peso_misto", "prop_vol_misto",
+                                           "prop_peso_pesado", "prop_vol_pesado", "prop_leve_topo", "prop_leve_base"):
+        return "materiais (prop_<código>)"
+    if c in ("num_materiais", "num_baias", "hhi_materiais"):
+        return "materiais (prop_<código>)"
+    if c.startswith(("n_blocos", "max_bloco", "n_ciclos", "fundo_", "topo_", "pos_media", "peso_topo", "peso_base",
+                     "peso_leve_topo", "prop_leve_topo", "prop_leve_base")) or c in ("violacao_regra", "num_camadas",
+                                                                                     "peso_por_ciclo_t"):
+        return "ordem, ciclos e posição"
+    return "massa, volume e densidade"
 
-def logreg(**kw):
-    return Pipeline([("imputar", SimpleImputer(strategy="median")), ("padronizar", StandardScaler()),
-                     ("modelo", LogisticRegression(max_iter=5000, class_weight="balanced", **kw))])
 
-def floresta(n=400):
-    return Pipeline([("imputar", SimpleImputer(strategy="median")),
-                     ("modelo", RandomForestClassifier(n_estimators=n, min_samples_leaf=5,
-                                                       class_weight="balanced_subsample",
-                                                       n_jobs=-1, random_state=SEED))])
-
-ALGORITMOS = {"LogReg": logreg, "RandomForest": floresta}
-
-def melhor_limiar(y, p):
-    limiares = np.linspace(0.05, 0.95, 91)
-    return limiares[np.argmax([f1_score(y, p >= l, zero_division=0) for l in limiares])]
-
-def avaliar_validacao(cols, nome):
-    """Treina no treino; mede na validação (PR-AUC, ROC-AUC e, no limiar de melhor F1, recall/precisão/F1)."""
-    out = {"conjunto": nome, "n": len(cols)}
-    for alg_nome, fabrica in ALGORITMOS.items():
-        p = fabrica().fit(treino[cols], y_tr).predict_proba(valid[cols])[:, 1]
-        lim = melhor_limiar(y_va, p)
-        out[f"{alg_nome}_PR-AUC"] = average_precision_score(y_va, p)
-        out[f"{alg_nome}_ROC-AUC"] = roc_auc_score(y_va, p)
-        out[f"{alg_nome}_F1"] = f1_score(y_va, p >= lim)
-        out[f"{alg_nome}_recall"] = recall_score(y_va, p >= lim)
-        out[f"{alg_nome}_precisao"] = precision_score(y_va, p >= lim, zero_division=0)
-    return out
-
-print(f"PR-AUC de um chute: treino {y_tr.mean():.3f} | validação {y_va.mean():.3f} | teste {y_te.mean():.3f}")
-comparacao = [avaliar_validacao(candidatas, "todas as candidatas"),
-              avaliar_validacao(candidatas_finais, "após multicolinearidade")]
-pd.DataFrame(comparacao).set_index("conjunto").round(3)
-
-# %% [markdown]
-# ## 7. Embedded (slides 24–26, Guia §8.1 e §8.3)
-#
-# - **L1 (o "Lasso" da classificação):** o alvo é 0/1, então em vez de `LassoCV` usamos a
-#   regressão logística com penalidade L1. Coluna que não ajuda recebe peso zero. Exige padronizar
-#   (slide 32).
-# - **Elastic Net:** mistura L1 e L2; mais estável quando há features correlacionadas.
-# - Nos dois, a força da penalidade é escolhida por validação cruzada no treino com a **regra de
-#   1 erro-padrão**: a curva costuma ser plana, então ficamos com a penalidade mais forte (menos
-#   colunas) cuja nota está a até 1 EP da melhor.
-# - **Caminho de regularização:** em que ordem as features entram conforme a penalidade afrouxa.
-# - **Importância da Random Forest** e **permutação** (embaralha uma coluna na validação e mede a
-#   queda). Importante para o modelo ≠ causa (slide 26).
-
-# %%
-def regra_1ep(lcv):
-    notas = lcv.scores_[1]
-    media, ep = notas.mean(0), notas.std(0) / np.sqrt(notas.shape[0])
-    if notas.ndim == 3:                                   # elastic net: (dobras, Cs, l1_ratios)
-        media, ep = media[:, 0], ep[:, 0]
-    i = media.argmax()
-    return lcv.Cs_[np.where(media >= media[i] - ep[i])[0].min()]
-
-def selecao_penalizada(penalty, **kw):
-    lcv = Pipeline([("imputar", SimpleImputer(strategy="median")), ("padronizar", StandardScaler()),
-                    ("modelo", LogisticRegressionCV(Cs=np.logspace(-3, 1, 20), penalty=penalty, solver="saga",
-                                                    cv=splits, scoring="average_precision",
-                                                    class_weight="balanced", max_iter=5000,
-                                                    random_state=SEED, **kw))]).fit(X_tr, y_tr)
-    C = regra_1ep(lcv.named_steps["modelo"])
-    extra = {"l1_ratio": kw["l1_ratios"][0]} if "l1_ratios" in kw else {}
-    final = logreg(penalty=penalty, solver="saga", C=C, **extra).fit(X_tr, y_tr)
-    return C, pd.Series(final.named_steps["modelo"].coef_[0], index=candidatas_finais)
-
-C_l1, coef_l1 = selecao_penalizada("l1")
-C_en, coef_en = selecao_penalizada("elasticnet", l1_ratios=[0.5])
-sel_l1, sel_en = list(coef_l1[coef_l1 != 0].index), list(coef_en[coef_en != 0].index)
-print(f"L1:          C = {C_l1:.4f} -> mantém {len(sel_l1)} de {len(candidatas_finais)}")
-print(f"Elastic Net: C = {C_en:.4f} -> mantém {len(sel_en)} de {len(candidatas_finais)}")
-print("\nCoeficientes L1 (padronizados; + aumenta o risco de carga alta):")
-print(coef_l1[coef_l1 != 0].sort_values(key=abs, ascending=False).round(3).to_string())
-
-# caminho de regularização (L1)
-Cs = np.logspace(-3, 1, 30)
-caminho = pd.DataFrame({C: logreg(penalty="l1", solver="saga", C=C).fit(X_tr, y_tr).named_steps["modelo"].coef_[0]
-                        for C in Cs}, index=candidatas_finais).T
-entrada = (caminho != 0).idxmax().where((caminho != 0).any()).sort_values()
-print("\nOrdem de entrada no caminho do L1 (primeiras 12):", list(entrada.index[:12]))
-fig, axes = plt.subplots(1, 2, figsize=(12, 4))
-axes[0].plot(Cs, (caminho != 0).sum(axis=1), marker="o", ms=3, color=AZUL)
-axes[0].axvline(C_l1, ls="--", color=VERMELHO, label=f"C escolhido ({C_l1:.3f})")
-axes[0].set_xscale("log"); axes[0].set_xlabel("C (maior = penalidade mais fraca)"); axes[0].set_ylabel("features com coef ≠ 0")
-axes[0].set_title("Caminho de regularização (L1)", loc="left"); axes[0].legend()
-for c in entrada.index[:6]:
-    axes[1].plot(Cs, caminho[c], label=c)
-axes[1].set_xscale("log"); axes[1].axhline(0, color="k", lw=0.6)
-axes[1].set_title("Coeficientes das 6 primeiras a entrar", loc="left"); axes[1].legend(fontsize=7)
-salvar("02_caminho_regularizacao")
-
-# %%
-rf = floresta().fit(X_tr, y_tr)
-imp_rf = pd.Series(rf.named_steps["modelo"].feature_importances_, index=candidatas_finais).sort_values(ascending=False)
-perm = permutation_importance(rf, X_va, y_va, scoring="average_precision", n_repeats=30, random_state=SEED, n_jobs=-1)
-imp_perm = pd.DataFrame({"media": perm.importances_mean, "dp": perm.importances_std},
-                        index=candidatas_finais).sort_values("media", ascending=False)
-sel_perm = list(imp_perm[(imp_perm["media"] - 2 * imp_perm["dp"] / np.sqrt(30)) > 0].index)
-print("Permutação na validação — queda claramente > 0 (média − 2·erro-padrão > 0):", sel_perm)
-
-fig, axes = plt.subplots(1, 2, figsize=(12, 7))
-t = imp_rf.head(20)
-axes[0].barh(t.index[::-1], t[::-1], color=AZUL); axes[0].set_title("Importância (Random Forest, treino)", loc="left")
-t = imp_perm.head(20)
-axes[1].barh(t.index[::-1], t["media"][::-1], xerr=t["dp"][::-1], color=VERMELHO)
-axes[1].axvline(0, color="k", lw=0.8); axes[1].set_title("Permutação: queda na PR-AUC (validação)", loc="left")
-salvar("03_importancia_e_permutacao")
-
-# %% [markdown]
-# ## 8. Wrapper: RFE com validação cruzada (slides 22–23, Guia §8.2)
-#
-# Treina, tira a coluna menos importante, repete. A validação cruzada (no treino, agrupada por
-# corrida) mostra quantas colunas compensa manter; usamos de novo a regra de 1 erro-padrão.
-# Para checar estabilidade (Guia §8.2), rodamos também com regressão logística e comparamos.
-
-# %%
-X_tr_imp = pd.DataFrame(SimpleImputer(strategy="median").fit_transform(X_tr), columns=candidatas_finais)
-X_tr_pad = pd.DataFrame(StandardScaler().fit_transform(X_tr_imp), columns=candidatas_finais)
-
-def rfe_1ep(estimador, X):
-    r = RFECV(estimador, step=1, cv=splits, scoring="average_precision", min_features_to_select=2, n_jobs=1).fit(X, y_tr)
-    res = pd.DataFrame({k: r.cv_results_[k] for k in ["n_features", "mean_test_score", "std_test_score"]})
-    res["ep"] = res["std_test_score"] / np.sqrt(len(splits))
-    best = res.loc[res["mean_test_score"].idxmax()]
-    n = int(res.loc[res["mean_test_score"] >= best["mean_test_score"] - best["ep"], "n_features"].min())
-    sup = RFE(estimador, n_features_to_select=n, step=1).fit(X, y_tr).support_
-    return list(np.array(candidatas_finais)[sup]), res, n, r.n_features_
-
-rf_rfe = RandomForestClassifier(n_estimators=200, min_samples_leaf=5, class_weight="balanced_subsample",
-                                n_jobs=-1, random_state=SEED)
-sel_rfe, res_rfe, n_rfe, n_rfe_max = rfe_1ep(rf_rfe, X_tr_imp)
-sel_rfe_lr, res_rfe_lr, n_rfe_lr, _ = rfe_1ep(LogisticRegression(max_iter=5000, class_weight="balanced"), X_tr_pad)
-print(f"RFE (Random Forest): melhor média com {n_rfe_max}; regra 1 EP -> {n_rfe}: {sel_rfe}")
-print(f"RFE (Reg. logística): regra 1 EP -> {n_rfe_lr}: {sel_rfe_lr}")
-print("Em comum:", sorted(set(sel_rfe) & set(sel_rfe_lr)))
-
-fig, ax = plt.subplots(figsize=(9, 3.8))
-for res, n, nome, cor in [(res_rfe, n_rfe, "Random Forest", AZUL), (res_rfe_lr, n_rfe_lr, "Reg. logística", LARANJA)]:
-    ax.errorbar(res["n_features"], res["mean_test_score"], yerr=res["ep"], marker="o", ms=3, capsize=2, color=cor, label=nome)
-    ax.axvline(n, ls="--", color=cor)
-ax.set_xlabel("nº de features"); ax.set_ylabel("PR-AUC (validação cruzada no treino)")
-ax.set_title("RFECV: desempenho × nº de features (linhas tracejadas: regra de 1 EP)", loc="left"); ax.legend()
-salvar("04_rfecv")
-
-# %% [markdown]
-# ## 9. Competir contra colunas de mentira — Boruta (slide 27)
-#
-# Para cada coluna criamos uma cópia embaralhada (ruído puro). A floresta treina com reais +
-# falsas; uma coluna real ganha um ponto quando sua importância supera a **melhor** falsa.
-# Repetimos 30 vezes e fica quem vence mais que o acaso (teste binomial). Feito à mão, sem o
-# pacote `boruta`.
-
-# %%
-rng = np.random.default_rng(SEED)
-N_ROD = 30
-vitorias = pd.Series(0, index=candidatas_finais)
-for i in range(N_ROD):
-    sombra = X_tr_imp.apply(lambda s: rng.permutation(s.values)).add_prefix("sombra_")
-    X_comb = pd.concat([X_tr_imp, sombra], axis=1)
-    m = RandomForestClassifier(n_estimators=300, min_samples_leaf=5, class_weight="balanced_subsample",
-                               n_jobs=-1, random_state=SEED + i).fit(X_comb, y_tr)
-    imp = pd.Series(m.feature_importances_, index=X_comb.columns)
-    vitorias += (imp[candidatas_finais] > imp[sombra.columns].max()).astype(int)
-p_boruta = vitorias.apply(lambda k: binomtest(int(k), N_ROD, 0.5, alternative="greater").pvalue)
-sel_boruta = list(vitorias[p_boruta < 0.05].index)
-print("Confirmadas pelo Boruta:", sel_boruta)
-
-# %% [markdown]
-# ## 10. Votação, estabilidade e quantas features ficam
-#
-# **Votação (slide 32: não confiar num método só; Guia §8.3: "features que aparecem em todos os
-# métodos são candidatas fortes").** Seis votos: filtro, RFE, L1, Elastic Net, permutação e Boruta.
-#
-# **Estabilidade:** repetimos o L1 (mesmo C) em 50 subamostras de metade das corridas do treino.
-# Uma feature escolhida em 90% das vezes é robusta; em 30%, é sorte.
-#
-# **Quantas features (Guia §9.3):** ordenamos as features por votos (desempate: vitórias no
-# Boruta) e adicionamos uma a uma, medindo a PR-AUC na **validação** com a Random Forest. O
-# "cotovelo" é o menor nº de features cuja curva (suavizada) chega a 98% do máximo.
-
-# %%
-votos = pd.DataFrame(index=candidatas_finais)
-votos["filtro"] = filtro["voto_filtro"].reindex(candidatas_finais)
-votos["RFE"] = votos.index.isin(sel_rfe)
-votos["L1"] = votos.index.isin(sel_l1)
-votos["ElasticNet"] = votos.index.isin(sel_en)
-votos["permutacao"] = votos.index.isin(sel_perm)
-votos["boruta"] = votos.index.isin(sel_boruta)
-votos = votos.astype(int)
-votos["total"] = votos.sum(axis=1)
-
-# estabilidade do L1
-corridas_tr = treino["cd_corrida"].unique()
-freq = pd.Series(0.0, index=candidatas_finais)
-for i in range(50):
-    sub = np.random.default_rng(SEED + i).choice(corridas_tr, size=len(corridas_tr) // 2, replace=False)
-    msk = treino["cd_corrida"].isin(sub)
-    coef = logreg(penalty="l1", solver="saga", C=C_l1).fit(X_tr[msk], y_tr[msk]).named_steps["modelo"].coef_[0]
-    freq += (coef != 0)
-votos["estabilidade_L1"] = (freq / 50).round(2)
-votos["vitorias_boruta"] = vitorias
-votos["corr"] = filtro["corr"].reindex(candidatas_finais).round(3)
-votos = votos.sort_values(["total", "vitorias_boruta"], ascending=False)
-print(votos.to_string())
-
-# %%
-ranking = list(votos.index)
-curva = []
-for k in range(1, len(ranking) + 1):
-    cols = ranking[:k]
-    linha = {"k": k}
-    for alg_nome, fabrica in ALGORITMOS.items():
-        p = fabrica(200).fit(treino[cols], y_tr).predict_proba(valid[cols])[:, 1] if alg_nome == "RandomForest" \
-            else fabrica().fit(treino[cols], y_tr).predict_proba(valid[cols])[:, 1]
-        linha[f"{alg_nome}_PR-AUC"] = average_precision_score(y_va, p)
-        linha[f"{alg_nome}_F1"] = f1_score(y_va, p >= melhor_limiar(y_va, p))
-    curva.append(linha)
-curva = pd.DataFrame(curva).set_index("k")
-suave = curva["RandomForest_PR-AUC"].rolling(3, center=True, min_periods=1).mean()
-k_final = int(suave[suave >= 0.98 * suave.max()].index.min())
-sel_final = ranking[:k_final]
-print(f"Cotovelo: {k_final} features ->", sel_final)
-curva.assign(feature_adicionada=ranking, RF_suavizada=suave).to_csv(PASTA_SAIDA / "curva_n_features.csv")
-
-fig, axes = plt.subplots(1, 2, figsize=(12, 4))
-for alg_nome, cor in [("RandomForest", AZUL), ("LogReg", LARANJA)]:
-    axes[0].plot(curva.index, curva[f"{alg_nome}_PR-AUC"], marker="o", ms=3, color=cor, label=alg_nome)
-    axes[1].plot(curva.index, curva[f"{alg_nome}_F1"], marker="o", ms=3, color=cor, label=alg_nome)
-axes[0].plot(suave.index, suave, color=AZUL, lw=3, alpha=0.3, label="RF suavizada")
-for ax, met in [(axes[0], "PR-AUC"), (axes[1], "F1")]:
-    ax.axvline(k_final, ls="--", color=VERMELHO, label=f"escolhido: {k_final}")
-    if met == "PR-AUC":
-        ax.axhline(y_va.mean(), color=CINZA, ls=":", label="chute")
-    ax.set_xlabel("nº de features (por ordem de votos)"); ax.set_ylabel(f"{met} na validação"); ax.legend(fontsize=8)
-axes[0].set_title("Desempenho × nº de features", loc="left")
-salvar("05_curva_desempenho_n_features")
-
-# %% [markdown]
-# ## 11. Comparar os conjuntos na validação (Guia §9.2)
-#
-# Mesmos dois algoritmos para todos. O limiar de recall/precisão/F1 é o de melhor F1 na própria
-# validação (por isso essas três ficam um pouco otimistas aqui; no teste, o limiar vem da
-# validação). Também testamos:
-# - o **baseline mínimo "só volume"** (Guia de Modelagem §3.1, passo 6: todas × selecionadas × só volume);
-# - o **conjunto básico** sugerido pelo Guia (`peso_t_total`, `volume_m3_total`, `num_materiais`);
-# - o conjunto final **sem as features de ciclo** (as features de ordem agregam? Guia §5);
-# - o conjunto final **com `carga_alta_c1`** (só faz sentido se a EVCOMX confirmar o timing).
-
-# %%
-FEAT_CICLO = [c for c in candidatas_finais if c.startswith(("n_ciclos", "n_blocos", "max_bloco", "peso_por_ciclo"))]
-FEAT_TEMPO = [c for c in candidatas_finais if c in ["hora", "turno_A", "turno_B", "dia_semana", "fim_de_semana",
-                                                     "tempo_montagem_min", "intervalo_medio_min"]]
-FEAT_HIST = [c for c in candidatas_finais if c.startswith("taxa_ca_ult")]
-conjuntos = {
-    "só volume (baseline mínimo, Guia de Modelagem §3.1)": ["volume_m3_total"],
-    "básico do Guia (3)": ["peso_t_total", "volume_m3_total", "num_materiais"],
-    "filtro": list(votos.index[votos.filtro == 1]),
-    "wrapper: RFE": sel_rfe,
-    "embedded: L1": sel_l1,
-    "embedded: Elastic Net": sel_en,
-    "Boruta": sel_boruta,
-    "consenso (>= 4 votos)": list(votos.index[votos.total >= 4]),
-    f"FINAL (cotovelo, {k_final})": sel_final,
-    "final sem features de ciclo": [c for c in sel_final if c not in FEAT_CICLO],
-    "final sem features de tempo": [c for c in sel_final if c not in FEAT_TEMPO],
-    "final sem histórico recente": [c for c in sel_final if c not in FEAT_HIST],
-    "final + carga_alta_c1": sel_final + ["carga_alta_c1"],
+GRUPOS = {}
+for c in F_OFICIAL:
+    GRUPOS.setdefault(_grupo(c), []).append(c)
+assert sum(len(v) for v in GRUPOS.values()) == len(F_OFICIAL) == 121
+DISPONIVEL = {
+    "massa, volume e densidade": "após a montagem do cestão (pesagem das camadas)",
+    "materiais (prop_<código>)": "após a montagem do cestão",
+    "ordem, ciclos e posição": "após a montagem do cestão (sequência das camadas)",
+    "tempo e turno": "após a montagem do cestão",
+    "contexto do cestão 1 (receita)": "no cestão 2, a receita do cestão 1 já é conhecida; no cestão 1 vale 0",
+    "histórico do forno": "quando a corrida anterior termina (shift(1); versão _lag2 pula a anterior)",
+    "gusa líquida": "na programação da corrida (carregamento 3)",
+    "ritmo do forno": "no início da montagem (horários das corridas anteriores)",
+    "regime recente (rel_)": "após a montagem (média das features dos cestões anteriores; nunca o alvo)",
+    "resultado do cestão 1": "no cestão 2: confirmado pela EVCOMX em 31/out/2026; no cestão 1 vale 0",
 }
-for nome, cols in conjuntos.items():
-    if len(cols):
-        comparacao.append(avaliar_validacao(cols, nome))
-tab_valid = pd.DataFrame(comparacao).set_index("conjunto")
-tab_valid.round(3)
+print(pd.Series({g: len(v) for g, v in GRUPOS.items()}).to_string())
 
 # %% [markdown]
-# ## 11b. Features sugeridas pelo Guia de Modelagem, testadas à parte
+# ## 6. Filtro: cada feature sozinha (slides 18–21, Guia §7.1)
 #
-# O Guia de Modelagem (§2.2 C) sugere três features de estrutura que ainda não estavam entre as
-# candidatas:
-# - **`violacao_fundo_topo`**: o cestão não começa **ou** não termina com leve (a regra
-#   leve–pesado–leve do Guia; a nossa `violacao_regra` olha só pesado no fundo/topo);
-# - **`colchao_topo_m3`**: volume do último bloco de camadas, se ele for de leve (o "colchão" do topo);
-# - **`prop_vol_centro`**: proporção do volume nas camadas centrais (fora dos 30% de baixo e de cima).
+# Só no treino. Correlação point-biserial, Mann-Whitney com Bonferroni e informação mútua, como na
+# rodada anterior, agora para as 121. Também medimos a PR-AUC de cada feature sozinha: uma feature
+# **"boa demais"** (PR-AUC isolada muito acima do resto) seria o primeiro sinal de vazamento
+# (armadilha do Guia §3.2).
+
+# %%
+treino_d = d[d.conjunto == "treino"].reset_index(drop=True)
+y_tr = treino_d["carga_alta"]
+X_tr121 = treino_d[F_OFICIAL]
+med = X_tr121.median()
+linhas_f = []
+for c in F_OFICIAL:
+    x = X_tr121[c].fillna(med[c])
+    r_, _ = pointbiserialr(y_tr, x) if x.nunique() > 1 else (0.0, 1.0)
+    _, p_mw = mannwhitneyu(x[y_tr == 0], x[y_tr == 1])
+    pr = average_precision_score(y_tr, x if r_ >= 0 else -x)
+    linhas_f.append({"feature": c, "grupo": _grupo(c), "corr": r_, "p_bonferroni": min(p_mw * len(F_OFICIAL), 1),
+                     "PR-AUC_sozinha_treino": pr})
+filtro = pd.DataFrame(linhas_f).set_index("feature")
+filtro["info_mutua"] = mutual_info_classif(X_tr121.fillna(med), y_tr, random_state=SEED)
+filtro = filtro.sort_values("info_mutua", ascending=False)
+print(f"Chute no treino: PR-AUC {y_tr.mean():.3f}. Melhor feature sozinha: "
+      f"{filtro['PR-AUC_sozinha_treino'].idxmax()} ({filtro['PR-AUC_sozinha_treino'].max():.3f})")
+print(f"Mann-Whitney significativo (Bonferroni): {(filtro.p_bonferroni < 0.05).sum()} de 121")
+print(filtro.head(20).round(4).to_string())
+
+CORES_G = {"histórico do forno": VERMELHO, "resultado do cestão 1": "#8e44ad", "gusa líquida": LARANJA,
+           "ritmo do forno": "#b7950b", "regime recente (rel_)": VERDE, "massa, volume e densidade": AZUL,
+           "materiais (prop_<código>)": "#5d6d7e", "ordem, ciclos e posição": "#1abc9c", "tempo e turno": CINZA,
+           "contexto do cestão 1 (receita)": "#34495e"}
+fig, axes = plt.subplots(1, 2, figsize=(13, 7.5))
+top = filtro.head(25)
+axes[0].barh(top.index[::-1], top["info_mutua"][::-1], color=[CORES_G[g] for g in top["grupo"][::-1]])
+axes[0].set_title("Informação mútua no treino (top 25)\ncor = grupo", loc="left")
+t2 = filtro.reindex(filtro["corr"].abs().sort_values(ascending=False).index).head(25)
+axes[1].barh(t2.index[::-1], t2["corr"][::-1], color=[CORES_G[g] for g in t2["grupo"][::-1]])
+axes[1].axvline(0, color="k", lw=0.8)
+axes[1].set_title("Correlação com carga alta (top 25 em |r|)\n+ aumenta o risco", loc="left")
+from matplotlib.patches import Patch
+fig.legend(handles=[Patch(color=v, label=k) for k, v in CORES_G.items()], loc="lower center", ncol=5, fontsize=8,
+           frameon=False)
+plt.tight_layout(rect=(0, 0.07, 1, 1))
+plt.savefig(PASTA_GRAF / "01_filtro_121_features.png", dpi=130, bbox_inches="tight"); plt.show()
+
+# %% [markdown]
+# ## 7. Redundância (Guia §7.2)
 #
-# **Por que à parte, e não como candidatas?** Testamos incluí-las na votação (rodada única,
-# feita ainda com o corte antigo de peso zero e registrada no README): nenhuma passou de 4 votos,
-# mas a presença delas mudou a ordem da multicolinearidade e do RFE, e o cotovelo caiu de 9 para as
-# **5 features com 6 votos** (que continuam sendo as 5 primeiras do conjunto final). Ou seja, elas não entram por mérito próprio e só
-# perturbariam uma seleção já feita. Aqui medimos o que acrescentam **ao conjunto final**, com o
-# treino e a validação de sempre. A curva `curva_n_features.csv` mostra a diferença entre as 5 primeiras e o conjunto final.
+# Há muita redundância estrutural (ex.: `h_taxa5` e `taxa_ca_ult5` são a mesma conta; `rel_` é a
+# feature menos uma média). Na rodada da RF, a regra |r| > 0,90 + VIF < 10 tirava as repetidas.
+# **Para o Gradient Boosting não cortamos**, por três motivos:
+# 1. árvores não têm coeficientes para "inflar": entre duas colunas iguais, cada divisão escolhe uma;
+# 2. a regra do VIF foi feita para modelos lineares (o próprio Guia associa o VIF à logística);
+# 3. o teste que importa é o de desempenho: na seção 9, tirar grupos inteiros não melhora os
+#    minutos nem a PR-AUC além do ruído.
+# O custo é na interpretação: a importância de uma informação se divide entre suas cópias. Por isso
+# a permutação (seção 8) e a interpretação (Aula 08) embaralham **grupos** juntos.
+
+# %%
+corr_abs = X_tr121.corr().abs()
+pares = (corr_abs.where(np.triu(np.ones(corr_abs.shape, dtype=bool), k=1)).stack()
+         .loc[lambda s: s > 0.90].sort_values(ascending=False))
+print(f"Pares com |r| > 0,90 no treino: {len(pares)} (envolvendo {len(set(pares.index.get_level_values(0)) | set(pares.index.get_level_values(1)))} features)")
+print(pares.head(15).round(3).to_string())
+
+# %% [markdown]
+# ## 8. Embedded: permutação por grupo na validação (Guia §8.1, passo 4 do Guia de Modelagem)
+#
+# O modelo oficial (5 HGB, 121 features) treina no **treino** e prevê a **validação**. Depois
+# embaralhamos as linhas de **um grupo inteiro de colunas de uma vez** (assim as cópias não se
+# "cobrem" umas às outras) e medimos a queda da PR-AUC. 20 repetições por grupo.
+# Também a permutação feature a feature, para ver as 20 de maior queda.
+
+# %%
+valid_d = d[d.conjunto == "validacao"].reset_index(drop=True)
+treinados_tv = [(fab(), cols) for fab, cols in familia(F_OFICIAL)]
+for m, cols in treinados_tv:
+    m.fit(treino_d[cols], y_tr)
+def _p(X):
+    return np.mean([m.predict_proba(X[cols])[:, 1] for m, cols in treinados_tv], axis=0)
+y_va = valid_d["carga_alta"].values
+base_va = average_precision_score(y_va, _p(valid_d))
+rng = np.random.default_rng(SEED)
+perm_g = {}
+for gname, cols in GRUPOS.items():
+    quedas = []
+    for _ in range(20):
+        Xp = valid_d.copy()
+        Xp[cols] = Xp[cols].values[rng.permutation(len(Xp))]
+        quedas.append(base_va - average_precision_score(y_va, _p(Xp)))
+    perm_g[gname] = (np.mean(quedas), np.std(quedas))
+perm_g = pd.DataFrame(perm_g, index=["queda_PR-AUC", "dp"]).T.sort_values("queda_PR-AUC", ascending=False)
+perm_f = {}
+for c in F_OFICIAL:
+    quedas = []
+    for _ in range(5):
+        Xp = valid_d.copy(); Xp[c] = Xp[c].values[rng.permutation(len(Xp))]
+        quedas.append(base_va - average_precision_score(y_va, _p(Xp)))
+    perm_f[c] = np.mean(quedas)
+perm_f = pd.Series(perm_f).sort_values(ascending=False)
+print(f"PR-AUC na validação (treino → validação): {base_va:.3f} | chute {y_va.mean():.3f}")
+print(perm_g.round(3).to_string())
+
+fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
+axes[0].barh(perm_g.index[::-1], perm_g["queda_PR-AUC"][::-1], xerr=perm_g["dp"][::-1],
+             color=[CORES_G[g] for g in perm_g.index[::-1]])
+axes[0].axvline(0, color="k", lw=0.8)
+axes[0].set_title("Embaralhando um GRUPO inteiro\nqueda da PR-AUC na validação", loc="left")
+t = perm_f.head(20)
+axes[1].barh(t.index[::-1], t[::-1], color=[CORES_G[_grupo(c)] for c in t.index[::-1]])
+axes[1].axvline(0, color="k", lw=0.8)
+axes[1].set_title("Embaralhando UMA feature (top 20)\na queda é menor: as cópias cobrem", loc="left")
+plt.tight_layout(); plt.savefig(PASTA_GRAF / "02_permutacao_por_grupo.png", dpi=130, bbox_inches="tight"); plt.show()
+
+# %% [markdown]
+# ## 9. Wrapper: tirar um grupo de cada vez, no walk-forward (Guia §8.2 e §9.2)
+#
+# É a decisão de fato. Mesmo protocolo da escolha do modelo: **walk-forward mensal** no dev (para
+# cada mês de nov/25 a jun/26, treina com tudo antes e prevê o mês) e **minutos perdidos de jan a
+# jun/26**, com o limiar de cada mês vindo só dos meses anteriores (950 min de parada sem modelo).
+# Algoritmo fixo: os 5 HGB do modelo oficial. Também entram:
+# - as **6 features da votação antiga** (com os 5 HGB, e a RF antiga como referência);
+# - as **84 candidatas** sem as features novas;
+# - o oficial **+ as 3 features do Guia de Modelagem** (violação fundo/topo, colchão, volume no centro).
+#
+# **Regra:** um grupo sai só se tirá-lo melhorar **além do ruído** os minutos (mais de 30 min a menos)
+# **e** a PR-AUC (+0,02). A faixa de ruído vem das 5 variantes de hiperparâmetro, que sozinhas já
+# espalham 600–635 min e ±0,02 de PR-AUC.
+#
+# **Transparência:** esta ablação já tinha sido feita na rodada 2 da otimização (31/out/2026,
+# `otimizacao_minutos/experimentos/`), com a conclusão "tudo dentro do ruído". Aqui ela é refeita
+# de forma reproduzível, com a mesma conclusão.
 
 # %%
 ultimo_bloco = blocos.groupby(chave).tail(1).set_index(chave)
@@ -840,66 +729,71 @@ extra = pd.DataFrame({
                        / g["volume_m3"].sum(),
 }).reset_index()
 EXTRA = ["violacao_fundo_topo", "colchao_topo_m3", "prop_vol_centro"]
-for parte in (treino, valid, teste):
-    parte.drop(columns=[c for c in extra.columns if c not in chave and c in parte], inplace=True)
-treino, valid, teste = [p.merge(extra, on=chave, how="left") for p in (treino, valid, teste)]
-linhas_extra = []
-for c in EXTRA:
-    x = treino[c]
-    _, p_mw = mannwhitneyu(x[y_tr == 0], x[y_tr == 1])
-    linhas_extra.append({"feature": c, "corr_treino": pointbiserialr(y_tr, x)[0], "p_mannwhitney": p_mw,
-                         "media_sem_CA": x[y_tr == 0].mean(), "media_com_CA": x[y_tr == 1].mean(),
-                         **{f"final+{c}: {k}": v for k, v in avaliar_validacao(sel_final + [c], c).items()
-                            if k.endswith("PR-AUC")}})
-tab_extra = pd.DataFrame(linhas_extra).set_index("feature")
-tab_extra.to_csv(PASTA_SAIDA / "features_guia_modelagem_avaliacao.csv")
-ref = tab_valid.loc[f"FINAL (cotovelo, {k_final})"]
-print(f"Referência, conjunto final: PR-AUC validação RF {ref['RandomForest_PR-AUC']:.3f} | LogReg {ref['LogReg_PR-AUC']:.3f}")
-print("Taxa de carga alta no treino:", round(y_tr.mean(), 3), "| com violacao_fundo_topo = 1:",
-      round(y_tr[treino.violacao_fundo_topo == 1].mean(), 3), "| = 0:", round(y_tr[treino.violacao_fundo_topo == 0].mean(), 3))
-tab_extra.round(3)
 
-# %% [markdown]
-# ## 12. Conferência no TESTE — uma única vez (slide 30, Guia §9)
-#
-# Treina no treino, escolhe o limiar na validação (melhor F1) e aplica no teste. Métricas do
-# Guia: acurácia, recall, precisão, F1, ROC-AUC e PR-AUC.
+# Os modelos leem o dataset do CSV (seção 12); aqui o mesmo arredondamento é feito em memória,
+# para os números serem idênticos aos da seleção de algoritmos.
+_buf2 = io.StringIO(); d.to_csv(_buf2, index=False); _buf2.seek(0)
+_, DEV, _ = carregar(_buf2)
+DEV = DEV.merge(extra[chave + EXTRA], on=chave, how="left")
+SEM_MODELO = DEV[DEV.mes.isin(MESES_CUSTO)].min_parada.sum()
 
-# %%
-final = []
-for nome, cols in [("todas as candidatas", candidatas), ("básico do Guia (3)", conjuntos["básico do Guia (3)"]),
-                   (f"FINAL ({k_final})", sel_final)]:
-    for alg_nome, fabrica in ALGORITMOS.items():
-        modelo = fabrica().fit(treino[cols], y_tr)
-        lim = melhor_limiar(y_va, modelo.predict_proba(valid[cols])[:, 1])
-        p = modelo.predict_proba(teste[cols])[:, 1]
-        prev = p >= lim
-        final.append({"conjunto": nome, "algoritmo": alg_nome, "n": len(cols), "limiar": lim,
-                      "acuracia": accuracy_score(y_te, prev), "recall": recall_score(y_te, prev),
-                      "precisao": precision_score(y_te, prev, zero_division=0), "F1": f1_score(y_te, prev),
-                      "ROC-AUC": roc_auc_score(y_te, p), "PR-AUC": average_precision_score(y_te, p)})
-        if nome.startswith("FINAL") and alg_nome == "RandomForest":
-            matriz = pd.DataFrame(confusion_matrix(y_te, prev), index=["real: normal", "real: carga alta"],
-                                  columns=["previsto: normal", "previsto: carga alta"])
-tab_teste = pd.DataFrame(final)
-print(f"Referência no teste: PR-AUC de um chute = {y_te.mean():.3f}; "
-      f"acurácia de quem sempre diz 'normal' = {1 - y_te.mean():.3f}")
-print("\nMatriz de confusão (FINAL, Random Forest):\n", matriz)
-tab_teste.round(3)
+conjuntos = {"OFICIAL (121)": F_OFICIAL, "sem o resultado do cestão 1 (120)": F_PRINCIPAL}
+for gname, cols in GRUPOS.items():
+    if gname != "resultado do cestão 1":
+        conjuntos[f"sem {gname} (−{len(cols)})"] = [c for c in F_OFICIAL if c not in cols]
+conjuntos["84 candidatas + cestão 1"] = candidatas + ["carga_alta_c1"]
+conjuntos["6 da votação antiga + cestão 1"] = FINAL6 + ["carga_alta_c1"]
+conjuntos["6 da votação antiga"] = FINAL6
+conjuntos["OFICIAL + 3 do Guia de Modelagem"] = F_OFICIAL + EXTRA
 
-# %% [markdown]
-# ## 13. Por que o desempenho cai fora do treino? Mudança de regime em maio/2026
-#
-# O treino vai até 25/04/2026; validação e teste caem inteiros num período em que o processo
-# mudou. Mês a mês:
+abl = []
+for nome, cols in conjuntos.items():
+    w = oof_dev(familia(cols), DEV)
+    abl.append({"conjunto": nome, "n_features": len(cols), **resumo_wf(w)})
+    print(f"{nome:48s} PR-AUC WF {abl[-1]['PR-AUC WF']:.3f} | min jan–jun {abl[-1]['min WF jan-jun']:.0f}")
+w = oof_dev([(RF6, FINAL6)], DEV)
+abl.append({"conjunto": "Antigo: RF 6 features (plano A)", "n_features": 6, **resumo_wf(w)})
+abl = pd.DataFrame(abl).set_index("conjunto")
+ref = abl.loc["OFICIAL (121)"]
+abl["Δ min vs oficial"] = abl["min WF jan-jun"] - ref["min WF jan-jun"]
+abl["Δ PR-AUC vs oficial"] = abl["PR-AUC WF"] - ref["PR-AUC WF"]
+abl["sem modelo jan-jun"] = SEM_MODELO
+melhoram = abl[(abl["Δ min vs oficial"] < -30) & (abl["Δ PR-AUC vs oficial"] > 0.02) & abl.index.str.startswith("sem ")]
+pioram = abl[(abl["Δ min vs oficial"] > 30) | (abl["Δ PR-AUC vs oficial"] < -0.02)]
+print(f"\nSem modelo: {SEM_MODELO:.0f} min. Grupos cuja retirada melhora minutos E PR-AUC além do ruído: "
+      f"{list(melhoram.index) or 'nenhum'}")
+print("Conjuntos claramente piores que o oficial:", list(pioram.index))
+abl.round(3)
 
 # %%
-d = df.copy()
-d["mes"] = d["inicio"].dt.strftime("%Y-%m")
-mensal = d.groupby("mes").agg(cestoes=("carga_alta", "size"), taxa_carga_alta=("carga_alta", "mean"),
-                              densidade_media=("densidade_media", "mean"),
-                              prop_peso_pesado=("prop_peso_pesado", "mean"), ciclos_medios=("n_ciclos", "mean"),
-                              corr_pesado_x_alvo=("prop_peso_pesado", lambda s: s.corr(d.loc[s.index, "carga_alta"])))
+o = abl.drop(index="OFICIAL (121)").sort_values("Δ min vs oficial")
+fig, axes = plt.subplots(1, 2, figsize=(13, 6.2), sharey=True)
+cor = [VERMELHO if v > 30 else (VERDE if v < -30 else CINZA) for v in o["Δ min vs oficial"]]
+axes[0].barh(o.index[::-1], o["Δ min vs oficial"][::-1], color=cor[::-1])
+axes[0].axvspan(-30, 30, color=CINZA, alpha=0.12, label="ruído (±30 min)")
+axes[0].axvline(0, color="k", lw=0.8); axes[0].legend(fontsize=8, loc="lower right")
+axes[0].set_title(f"Minutos a mais que o oficial (jan–jun/26)\noficial: {ref['min WF jan-jun']:.0f} de {SEM_MODELO:.0f} min",
+                  loc="left")
+cor = [VERMELHO if v < -0.02 else (VERDE if v > 0.02 else CINZA) for v in o["Δ PR-AUC vs oficial"]]
+axes[1].barh(o.index[::-1], o["Δ PR-AUC vs oficial"][::-1], color=cor[::-1])
+axes[1].axvspan(-0.02, 0.02, color=CINZA, alpha=0.12)
+axes[1].axvline(0, color="k", lw=0.8)
+axes[1].set_title(f"PR-AUC (walk-forward) − oficial\noficial: {ref['PR-AUC WF']:.3f}", loc="left")
+plt.tight_layout(); plt.savefig(PASTA_GRAF / "03_ablacao_por_grupo_walkforward.png", dpi=130, bbox_inches="tight"); plt.show()
+
+# %% [markdown]
+# ## 10. Mudança de regime em maio/2026
+#
+# O treino vai até 25/04/2026; validação e teste caem num período em que o processo mudou. Por isso
+# existem as features `rel_` (a composição relativa à época) e o walk-forward re-treina todo mês.
+
+# %%
+dm = df.copy()
+dm["mes"] = dm["inicio"].dt.strftime("%Y-%m")
+mensal = dm.groupby("mes").agg(cestoes=("carga_alta", "size"), taxa_carga_alta=("carga_alta", "mean"),
+                               densidade_media=("densidade_media", "mean"),
+                               prop_peso_pesado=("prop_peso_pesado", "mean"), ciclos_medios=("n_ciclos", "mean"),
+                               corr_pesado_x_alvo=("prop_peso_pesado", lambda s: s.corr(dm.loc[s.index, "carga_alta"])))
 fig, axes = plt.subplots(1, 3, figsize=(15, 3.8))
 axes[0].plot(mensal.index, mensal["prop_peso_pesado"], marker="o", color=VERMELHO, label="prop. peso pesado")
 axes[0].plot(mensal.index, mensal["taxa_carga_alta"], marker="o", color=CINZA, label="taxa de carga alta")
@@ -911,96 +805,100 @@ axes[2].set_title("Correlação prop. pesado × carga alta", loc="left")
 for ax in axes:
     ax.tick_params(axis="x", rotation=60)
     ax.axvspan("2026-04", "2026-08", color=LARANJA, alpha=0.08)
-salvar("06_mudanca_de_regime")
+salvar("04_mudanca_de_regime")
 mensal.round(3)
 
 # %% [markdown]
-# ## 14. Respostas às perguntas do Guia §1.3
+# ## 11. Respostas às perguntas do Guia §1.3
 #
-# (Os números abaixo são calculados; a interpretação está no README da pasta.)
+# (Os números são calculados aqui; a interpretação está no README da pasta.)
 
 # %%
-rf_final = floresta().fit(treino[sel_final], y_tr)
-perm_final = permutation_importance(rf_final, valid[sel_final], y_va, scoring="average_precision",
-                                    n_repeats=30, random_state=SEED, n_jobs=-1)
-imp_final = pd.Series(perm_final.importances_mean, index=sel_final).sort_values(ascending=False)
-print("1) Top 5 features do conjunto final (permutação na validação) e correlação com carga alta:")
-for c in imp_final.index[:5]:
-    print(f"   {c:22s} queda PR-AUC {imp_final[c]:.3f} | corr {filtro.loc[c, 'corr'] if c in filtro.index else np.nan:+.3f}")
+print("1) Que tipo de informação descreve um cestão propenso a carga alta? (permutação por grupo, validação)")
+for gname, v in perm_g["queda_PR-AUC"].items():
+    print(f"   {gname:32s} queda PR-AUC {v:+.3f}")
 print("\n2) Volume x peso — correlação com carga alta no treino:")
 for c in ["volume_m3_total", "peso_t_total", "densidade_media", "prop_peso_pesado"]:
-    print(f"   {c:18s} {filtro.loc[c, 'corr']:+.3f}")
-print("   PR-AUC na validação (RF) só com volume:", round(avaliar_validacao(["volume_m3_total"], "x")["RandomForest_PR-AUC"], 3),
-      "| só com peso:", round(avaliar_validacao(["peso_t_total"], "x")["RandomForest_PR-AUC"], 3))
-print("\n3) Features de ordem/ciclo agregam? PR-AUC validação (RF / LogReg):")
-for nome in [f"FINAL (cotovelo, {k_final})", "final sem features de ciclo"]:
-    print(f"   {nome:32s} {tab_valid.loc[nome, 'RandomForest_PR-AUC']:.3f} / {tab_valid.loc[nome, 'LogReg_PR-AUC']:.3f}")
-print("\n4) Melhor método de seleção na validação (RF PR-AUC):")
-print(tab_valid["RandomForest_PR-AUC"].sort_values(ascending=False).round(3).to_string())
-print(f"\n5) Quantas features: cotovelo em {k_final} (de {len(candidatas)} candidatas).")
+    print(f"   {c:18s} {filtro.loc[c, 'corr']:+.3f} | PR-AUC sozinha {filtro.loc[c, 'PR-AUC_sozinha_treino']:.3f}")
+print(f"\n3) Ordem e ciclos agregam? Tirar o grupo no walk-forward: "
+      f"Δ min {abl.loc[[i for i in abl.index if i.startswith('sem ordem')][0], 'Δ min vs oficial']:+.0f}, "
+      f"Δ PR-AUC {abl.loc[[i for i in abl.index if i.startswith('sem ordem')][0], 'Δ PR-AUC vs oficial']:+.3f}")
+print("\n4) Que conjunto rende melhor fora da amostra (walk-forward)?")
+print(abl[["n_features", "PR-AUC WF", "min WF jan-jun"]].sort_values("min WF jan-jun").round(3).to_string())
 
 # %% [markdown]
-# ## 15. Arquivos para a modelagem
+# ## 12. Arquivos para a modelagem
 #
-# - `dataset_modelagem_fs.csv`: conjunto FINAL + `carga_alta` + metadados (`cd_corrida`,
-#   `nu_carregamento`, `conjunto` com o split 70/15/15, `inicio`). **`inicio` não é feature.**
-# - `dataset_features_completo.csv`: todas as candidatas (para a seleção de algoritmos testar
-#   outros conjuntos).
-# - `votos_feature_selection.csv`: votos de cada método, estabilidade e correlação.
-# - `tabela_features_finais.csv`: o entregável do Guia de Modelagem (§3.2): como cada feature final
-#   é calculada, por que entra e quando está disponível.
-# - `curva_n_features.csv`: PR-AUC na validação conforme o nº de features (passo 6 do Guia).
-# - `features_guia_modelagem.csv`: as três features da seção 11b e `violacao_regra`, por cestão
-#   (usadas na validação de domínio da verificação).
-# - `graficos/`: figuras para a apresentação.
+# - **`dataset_modelagem_fs.csv`**: o dataset de modelagem do modelo oficial. Metadados
+#   (`cd_corrida`, `nu_carregamento`, `conjunto`, `inicio`, `t`, `t_ini`, `t_fim`, `mes`), as **121
+#   features oficiais**, `carga_alta` e `min_parada` (**só para medir minutos; não é feature**);
+# - `dataset_features_completo.csv`: tudo o que foi calculado (inclui as versões `_lag2`);
+# - `features_finais.json`: as listas de features (oficial, sem o cestão 1, lag2, as 6 antigas) e os grupos;
+# - `tabela_features_finais.csv`: o entregável do Guia de Modelagem (§3.2), feature a feature;
+# - `grupos_features.csv`: resumo por grupo (o que é, quando está disponível, permutação, ablação);
+# - `filtro_features.csv`, `ablacao_grupos_walkforward.csv`, `features_guia_modelagem.csv`;
+# - `graficos/`.
 
 # %%
-meta = ["cd_corrida", "nu_carregamento", "conjunto", "inicio"]
-df[meta + sel_final + ["carga_alta"]].to_csv(PASTA_SAIDA / "dataset_modelagem_fs.csv", index=False)
-df[meta + candidatas + ["carga_alta_c1", "carga_alta"]].to_csv(PASTA_SAIDA / "dataset_features_completo.csv", index=False)
-votos.to_csv(PASTA_SAIDA / "votos_feature_selection.csv")
+meta_out = ["cd_corrida", "nu_carregamento", "conjunto", "inicio", "t", "t_ini", "t_fim", "mes"]
+d.to_csv(PASTA_SAIDA / "dataset_features_completo.csv", index=False)
+d[meta_out + F_OFICIAL + ["carga_alta", "min_parada"]].to_csv(PASTA_SAIDA / "dataset_modelagem_fs.csv", index=False)
+json.dump({"features_oficial": F_OFICIAL, "features_principal": F_PRINCIPAL, "features_lag2": F_LAG2,
+           "features_rf6_antigo": FINAL6, "grupos": GRUPOS,
+           "variantes_hgb": VARIANTES},
+          open(PASTA_SAIDA / "features_finais.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+filtro.to_csv(PASTA_SAIDA / "filtro_features.csv")
+abl.to_csv(PASTA_SAIDA / "ablacao_grupos_walkforward.csv")
 extra.to_csv(PASTA_SAIDA / "features_guia_modelagem.csv", index=False)
 
-# Entregável do Guia de Modelagem (§3.2): como cada feature final é calculada, por que entra e
-# quando está disponível no processo.
-DESCRICAO = {
-    "densidade_media": ("peso total ÷ volume estimado do cestão (volume = Σ peso da camada ÷ densidade do material)",
-                        "cestão 'fofo' (pouca tonelada por m³) ocupa mais altura para o mesmo peso",
-                        "após a montagem do cestão (pesagem das camadas)"),
-    "prop_peso_pesado": ("peso das camadas de material pesado ÷ peso total",
-                         "material pesado compacta a carga; pouco pesado = cestão volumoso",
-                         "após a montagem do cestão"),
-    "peso_por_ciclo_t": ("peso total ÷ nº de ciclos de montagem (ciclo = bloco de pesado)",
-                         "ciclos 'grossos' = camadas pouco intercaladas, leve acumulado sem pesado em cima",
-                         "após a montagem do cestão"),
-    "taxa_ca_ult5": ("% de corridas com carga alta entre as 5 corridas anteriores (shift(1), nunca a atual)",
-                     "estado recente do forno: carga alta puxa carga alta",
-                     "quando a corrida anterior termina (CONFIRMAR com a EVCOMX se já é conhecido na montagem)"),
-    "taxa_ca_ult10": ("% de corridas com carga alta entre as 10 corridas anteriores (shift(1))",
-                      "mesma ideia, janela mais longa e mais estável",
-                      "quando a corrida anterior termina (CONFIRMAR com a EVCOMX)"),
-    "max_bloco_leve_m3": ("volume do maior bloco de camadas leves seguidas",
-                          "bloco grande de leve sem pesado/misto intercalado ocupa muita altura",
-                          "após a montagem do cestão"),
-    "prop_leve_base": ("peso de leve nos 30% de camadas de baixo ÷ peso dessas camadas",
-                       "muito leve no fundo = base fofa, carga mais alta",
-                       "após a montagem do cestão"),
-    "prop_PACB": ("peso do material PACB ÷ peso total",
-                  "pacote de chaparia: material volumoso para o peso",
-                  "após a montagem do cestão"),
-    "prop_PAEP": ("peso do material PAEP ÷ peso total",
-                  "pacote de estamparia: material volumoso para o peso",
-                  "após a montagem do cestão"),
+DESC_GRUPO = {
+    "massa, volume e densidade": "peso, volume estimado (peso ÷ densidade do material), densidade média, peso/volume por classe, rendimento, energia típica e interações",
+    "materiais (prop_<código>)": "proporção em peso de cada material comum (≥ 5% dos cestões do treino), nº de materiais e baias, concentração (HHI)",
+    "ordem, ciclos e posição": "blocos e ciclos leve→pesado→misto, maior bloco, o que está no fundo/topo e nos 30% de baixo/cima, posição média",
+    "tempo e turno": "tempo de montagem, intervalo entre camadas, hora, turno, dia da semana",
+    "contexto do cestão 1 (receita)": "no cestão 2: volume e peso do cestão 1, volume acumulado, diferença de peso, se a composição mudou",
+    "histórico do forno": "taxa de carga alta nas últimas 3–50 corridas, médias exponenciais, última corrida e seus cestões, corridas desde a última carga alta, minutos parados nas últimas 10, taxa nas últimas 8 h e 24 h",
+    "gusa líquida": "toneladas de gusa líquida (GUSL) e de carga sólida no carregamento 3 da corrida",
+    "ritmo do forno": "minutos desde o início da corrida anterior e desde o fim do cestão 2 dela; nº de corridas nas últimas 8 h e 24 h",
+    "regime recente (rel_)": "a feature menos a média dos 100 cestões anteriores (rel_) ou dos 60 do mesmo número de cestão (rel2_)",
+    "resultado do cestão 1": "no cestão 2: 1 se o cestão 1 da mesma corrida deu carga alta; no cestão 1 vale 0",
 }
-tabela_final = pd.DataFrame(
-    [{"feature": c, "como_e_calculada": DESCRICAO.get(c, ("", "", ""))[0], "por_que_entra": DESCRICAO.get(c, ("", "", ""))[1],
-      "quando_esta_disponivel": DESCRICAO.get(c, ("", "", ""))[2],
-      "sinal (corr. no treino)": f"{filtro.loc[c, 'corr']:+.2f}", "votos (de 6)": int(votos.loc[c, "total"])}
-     for c in sel_final])
-faltando = [c for c in sel_final if c not in DESCRICAO]
-if faltando:
-    print("ATENÇÃO: o conjunto final mudou; descreva no dicionário DESCRICAO:", faltando)
-tabela_final.to_csv(PASTA_SAIDA / "tabela_features_finais.csv", index=False)
-print(tabela_final.to_string(index=False))
-print("Conjunto final:", sel_final)
+POR_QUE = {
+    "massa, volume e densidade": "cestão 'fofo' (pouca tonelada por m³) ocupa mais altura para o mesmo peso",
+    "materiais (prop_<código>)": "alguns materiais são volumosos para o peso (ex.: pacotes de chaparia)",
+    "ordem, ciclos e posição": "camadas mal intercaladas deixam leve acumulado sem pesado em cima",
+    "tempo e turno": "ritmo e equipe da montagem",
+    "contexto do cestão 1 (receita)": "o cestão 2 entra num forno que já contém o cestão 1",
+    "histórico do forno": "carga alta puxa carga alta: é o sinal mais forte do problema",
+    "gusa líquida": "a gusa muda o espaço e o banho no forno; corridas sem gusa quase não dão carga alta",
+    "ritmo do forno": "forno acelerado tem menos tempo de fusão entre cestões",
+    "regime recente (rel_)": "depois de maio/26 o perfil dos cestões mudou; conta ser fofo 'para a época'",
+    "resultado do cestão 1": "quando o cestão 1 deu carga alta, o cestão 2 dá menos (a parada ajuda a fundir, ou o pátio corrige)",
+}
+tabela = pd.DataFrame([{
+    "feature": c, "grupo": _grupo(c), "como_e_calculada": DESC_GRUPO[_grupo(c)], "por_que_entra": POR_QUE[_grupo(c)],
+    "quando_esta_disponivel": DISPONIVEL[_grupo(c)], "sinal (corr. no treino)": f"{filtro.loc[c, 'corr']:+.2f}",
+    "info_mutua_treino": round(filtro.loc[c, "info_mutua"], 4),
+    "queda_PR-AUC_permutacao_validacao": round(perm_f[c], 4)} for c in F_OFICIAL])
+tabela.to_csv(PASTA_SAIDA / "tabela_features_finais.csv", index=False)
+resumo_g = pd.DataFrame([{
+    "grupo": gname, "n_features": len(cols), "o_que_e": DESC_GRUPO[gname], "quando_esta_disponivel": DISPONIVEL[gname],
+    "queda_PR-AUC_permutacao_grupo": round(perm_g.loc[gname, "queda_PR-AUC"], 3),
+    "Δ_min_sem_o_grupo_WF": round(abl.loc[[i for i in abl.index if i.startswith(f"sem {gname}") or
+                                          (gname == "resultado do cestão 1" and i.startswith("sem o resultado"))][0],
+                                  "Δ min vs oficial"], 1),
+    "Δ_PR-AUC_sem_o_grupo_WF": round(abl.loc[[i for i in abl.index if i.startswith(f"sem {gname}") or
+                                             (gname == "resultado do cestão 1" and i.startswith("sem o resultado"))][0],
+                                     "Δ PR-AUC vs oficial"], 3)} for gname, cols in GRUPOS.items()])
+resumo_g.to_csv(PASTA_SAIDA / "grupos_features.csv", index=False)
+print(resumo_g.drop(columns=["o_que_e"]).to_string(index=False))
+
+# Conferência: o dataset é o mesmo que gerou o modelo oficial na otimização (out/2026)?
+antigo = RAIZ / "otimizacao_minutos" / "dataset_minutos.csv"
+if antigo.exists():
+    a = pd.read_csv(antigo); n = pd.read_csv(PASTA_SAIDA / "dataset_features_completo.csv")
+    iguais = list(a.columns) == list(n.columns) and a.shape == n.shape and \
+        all(a[c].equals(n[c]) or np.allclose(a[c], n[c], equal_nan=True, rtol=0, atol=0)
+            if a[c].dtype.kind in "fi" else a[c].astype(str).equals(n[c].astype(str)) for c in a.columns)
+    print("Dataset idêntico ao da otimização por minutos:", iguais)
 print("Salvos em", PASTA_SAIDA)

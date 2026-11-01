@@ -1,6 +1,6 @@
 # App Streamlit do simulador de carga alta.
 # As versões abaixo são as mesmas que treinaram e salvaram o modelo (requirements.txt da raiz).
-# O modelo_minutos.joblib foi salvo com scikit-learn 1.9.1: com outra versão, as chances podem mudar um pouco.
+# O selecao_algoritmos/modelo_final.joblib foi salvo com scikit-learn 1.9.1: com outra versão, as chances podem mudar um pouco.
 numpy==2.5.3
 pandas==3.0.5
 scikit-learn==1.9.1

@@ -2,144 +2,139 @@
 
 Segue a aula de Feature Selection do bootcamp, o Guia de FE/FS da EVCOMX e, na revisão, o **Guia de Modelagem Preditiva da EVCOMX** (§1 a §3).
 
-> **Rodada de out/2026 (corte de 2.000 kg).** A EVCOMX respondeu que camadas de 10 kg e 100 kg também podem ser desconsideradas e deu 2.000 kg como corte. A EDA passou a remover todas as camadas abaixo de 2.000 kg (antes, só as de peso zero) e esta etapa foi refeita do zero. Mudou o conjunto final: de **9 para 6 features**. As 5 features com 6 votos são as mesmas de antes; das 4 com 5 votos, só `prop_PACB` continua. `max_bloco_leve_m3`, `prop_leve_base` e `prop_PAEP` caíram para 3 ou 4 votos. Os números abaixo são desta rodada.
+**Conjunto oficial: 121 features**, as do modelo oficial do projeto (média de 5 Gradient Boosting):
+- as **84 candidatas** da engenharia de features da receita do cestão;
+- **36 novas**: histórico rico do forno, gusa líquida, ritmo do forno e regime recente;
+- **`carga_alta_c1`**, o resultado do cestão 1 da mesma corrida, cujo timing a EVCOMX confirmou em 31/out/2026.
+
+Esta pasta entrega o **dataset de modelagem** desse modelo (`dataset_modelagem_fs.csv`).
+
+> **Antes (out/2026), o conjunto final era de 6 features**, escolhidas por votação entre seis métodos (filtro, RFE, L1, Elastic Net, permutação, Boruta) para uma Random Forest: `densidade_media`, `prop_peso_pesado`, `peso_por_ciclo_t`, `taxa_ca_ult5`, `taxa_ca_ult10` e `prop_PACB`. Esse caminho está em [`historico_rf6/`](historico_rf6/README.md). Ele foi superado quando a EVCOMX deu o critério de negócio (**menos minutos de forno perdidos**). No walk-forward, as 6 features perdem **~130 min a mais** que as 121 (744 × 616 min, com o mesmo algoritmo; seção 9).
 
 ### Como rodar
 
 1. `EDA/transforma_dataset.py`: gera o `EDA/base.csv` limpo.
-2. `feature_selection/feature_selection.py` (células `#%%`) ou `feature_selection_carga_alta.ipynb` (mesmo conteúdo, já executado).
+2. `feature_selection/feature_selection.py` (células `#%%`) ou `feature_selection_carga_alta.ipynb` (mesmo conteúdo, já executado). Leva ~15 min, por causa da seção 9.
 
-O código acha a raiz do projeto sozinho; pode rodar de dentro de `feature_selection/` ou da raiz.
+O código acha a raiz do projeto sozinho. O protocolo comum (minutos, walk-forward, receita dos 5 HGB) vem de `comum/protocolo.py`. **Toda escolha usa só treino + validação; o teste não é aberto nesta etapa.**
 
 ### Arquivos gerados
 
 | Arquivo | O que é |
 |---|---|
-| `dataset_modelagem_fs.csv` | **Conjunto final (6 features)** + `carga_alta` + metadados (`cd_corrida`, `nu_carregamento`, `conjunto`, `inicio`) |
-| `dataset_features_completo.csv` | Todas as 84 candidatas, para a seleção de algoritmos testar outros conjuntos |
-| `votos_feature_selection.csv` | Voto de cada método, estabilidade, vitórias no Boruta e correlação |
-| `tabela_features_finais.csv` | **Entregável do Guia de Modelagem (§3.2):** como cada feature final é calculada, por que entra e quando está disponível |
-| `curva_n_features.csv` | PR-AUC na validação conforme o nº de features, na ordem dos votos |
-| `features_guia_modelagem.csv` | As 3 features sugeridas pelo Guia de Modelagem e `violacao_regra`, por cestão (usadas na validação de domínio) |
-| `features_guia_modelagem_avaliacao.csv` | O que essas 3 features acrescentam ao conjunto final (seção 11b) |
-| `graficos/` | Figuras para a apresentação |
+| **`dataset_modelagem_fs.csv`** | **O dataset de modelagem do modelo oficial:** metadados (`cd_corrida`, `nu_carregamento`, `conjunto`, `inicio`, `t`, `t_ini`, `t_fim`, `mes`), as **121 features**, `carga_alta` e `min_parada` |
+| `dataset_features_completo.csv` | Tudo o que foi calculado (140 colunas), incluindo as versões `_lag2` do histórico. É o mesmo arquivo que gerou o modelo na otimização: o script confere, coluna a coluna |
+| `features_finais.json` | As listas (oficial com 121, sem o cestão 1 com 120, lag2 com 108, as 6 antigas), os 10 grupos e as 5 variantes de hiperparâmetro |
+| `tabela_features_finais.csv` | **Entregável do Guia de Modelagem (§3.2)**, feature a feature: grupo, como se calcula, por que entra, quando está disponível, sinal, informação mútua e permutação |
+| `grupos_features.csv` | O mesmo, por grupo, com a permutação e a ablação |
+| `filtro_features.csv`, `ablacao_grupos_walkforward.csv`, `features_guia_modelagem.csv` | Filtro, tirar-um-grupo e as 3 features do Guia |
+| `graficos/` | 4 figuras |
 
-- **`conjunto`** traz o split 70/15/15 temporal (treino / validacao / teste), definido pelo professor. **Todo o grupo deve usar essa coluna.**
-- **`inicio` não é feature.** É a data do cestão, guardada só como metadado.
+- **`conjunto`** traz o split 70/15/15 temporal (treino / validacao / teste), definido pelo professor.
+- **`inicio`, `t`, `t_ini`, `t_fim` e `mes` não são features**; **`min_parada` também não**: ela só existe depois da carga alta e serve só para medir minutos perdidos.
 
 ### Decisões
 
-- **Unidade de análise:** o cestão (carregamento 1 ou 2). É a pergunta operacional, o alvo já vem por cestão, dá ~3.500 exemplos e permite usar o cestão 1 como contexto do 2.
-- **Camadas:** só as de 2.000 kg ou mais (decisão da EDA, com o corte dado pela EVCOMX). Nenhum cestão sai inteiro. Com menos camadas "fantasma", algumas flags de posição deixaram de ser quase constantes e voltaram ao filtro: são **84 candidatas** (antes, 80).
-- **Split:** 70/15/15 em ordem de tempo, por corrida. A seleção roda só no treino. A validação escolhe quantas features ficam e o limiar de decisão. O teste é usado uma única vez.
-- **Métrica de seleção:** PR-AUC, porque só ~16% dos cestões têm carga alta. No teste também reportamos acurácia, recall, precisão, F1 e ROC-AUC.
-- **Multicolinearidade:**
-  - saem os pares com |r| > 0,90, ficando a feature mais correlacionada com a carga alta;
-  - depois, VIF < 10 aplicado em ordem de relevância. Remover sempre "a de maior VIF" jogava fora justamente as features mais preditivas.
-- **Seleção:** seis métodos votam:
-  - filtro (Mann-Whitney com Bonferroni ou informação mútua);
-  - RFE;
-  - L1;
-  - Elastic Net;
-  - permutação;
-  - Boruta.
-- **Quantas features:** as features são adicionadas uma a uma, por ordem de votos, e o desempenho é medido na validação. O "cotovelo" ficou em **6 features**. A 7ª da fila, `dia_semana` (5 votos), fica fora pelo cotovelo.
+- **Unidade de análise:** o cestão (carregamento 1 ou 2). É a pergunta operacional e permite usar o cestão 1 como contexto do 2.
+- **Camadas:** só as de 2.000 kg ou mais (EDA, corte dado pela EVCOMX).
+- **Split:** 70/15/15 em ordem de tempo, por corrida. Dev = treino + validação.
+- **Métricas de seleção:** **minutos perdidos** no walk-forward (régua da EVCOMX: carga alta perdida = duração da parada; alarme falso = 1 min) e **PR-AUC** (a métrica principal do grupo; só ~16% dos cestões têm carga alta).
+- **Algoritmo fixo nas comparações:** os 5 Gradient Boosting do modelo oficial (e a RF antiga como referência).
 
-### Conjunto final (6 features): como se calcula, por que entra e quando está disponível
+### As 121 features em 10 grupos
 
-É o entregável que o Guia de Modelagem pede ao fim da feature selection (§3.2). Todas passam pela pergunta do Guia (§1.2): **"o pátio sabe isso antes de despejar o cestão?"**
+| Grupo | Nº | O que é | Quando está disponível |
+|---|---|---|---|
+| Massa, volume e densidade | 24 | peso, volume estimado (peso ÷ densidade do material), densidade, peso/volume por classe, rendimento, energia típica, interações | após a montagem do cestão |
+| Ordem, ciclos e posição | 23 | blocos e ciclos leve → pesado → misto, maior bloco, fundo/topo, 30% de baixo/cima, posição média | após a montagem |
+| Materiais | 21 | proporção em peso de cada material comum, nº de materiais e baias, concentração (HHI) | após a montagem |
+| Histórico do forno | 18 | taxa de carga alta nas últimas 3–50 corridas, médias exponenciais, última corrida e seus cestões, corridas desde a última carga alta, minutos parados nas últimas 10, taxa nas últimas 8 h e 24 h | quando a corrida anterior termina (`shift(1)`, nunca a atual) |
+| Regime recente (`rel_`) | 14 | a feature menos a média dos 100 cestões anteriores (ou dos 60 do mesmo número de cestão) | após a montagem (usa só features passadas, nunca o alvo) |
+| Tempo e turno | 7 | tempo de montagem, intervalo entre camadas, hora, turno, dia da semana | após a montagem |
+| Contexto do cestão 1 (receita) | 6 | no cestão 2: volume e peso do cestão 1, volume acumulado, diferença de peso | no cestão 2; no cestão 1 vale 0 |
+| Ritmo do forno | 4 | minutos desde a corrida anterior e desde o fim do cestão 2 dela; corridas nas últimas 8 h e 24 h | no início da montagem |
+| Gusa líquida | 3 | toneladas de gusa líquida e de carga sólida no carregamento 3 | na programação da corrida |
+| **Resultado do cestão 1** | 1 | no cestão 2, 1 se o cestão 1 da mesma corrida deu carga alta | **confirmado pela EVCOMX (31/out/2026)**; no cestão 1 vale 0 |
 
-| Feature | Como é calculada | Por que entra | Quando está disponível | Sinal | Votos |
+**Features proibidas por vazamento** (Guia §1.2): duração da parada, o alvo da própria corrida, data/hora de início como número e qualquer dado medido de energia ou fusão da corrida. A `energia_estimada_mwh` é só a energia típica de cada material vezes o peso: uma propriedade da receita.
+
+### Passo a passo do Guia (§3.1) e onde está
+
+| Passo | Onde | Resultado |
+|---|---|---|
+| 1. Filtros simples (constantes, quase constantes, vazias) | §3 | `fundo_pesado` sai (99,8% igual): sobram 84 candidatas |
+| 2. Redundância | §7 | 73 pares com \|r\| > 0,90 (58 features). **Não cortamos para árvores** (abaixo) |
+| 3. Relevância univariada | §6 | Mann-Whitney significativo em 73 de 121; nenhuma feature "boa demais" |
+| 4. Importância via modelo: **permutação na validação** | §8 | Por grupo, gráfico 02 |
+| 5. Wrapper | §9 | **Tirar um grupo de cada vez no walk-forward**, gráfico 03 |
+| 6. Todas × selecionadas × baseline mínimo | §9 | 121 × 84 × 6 × "só volume" |
+
+**Filtro (§6).** No treino, as features mais informativas são as de pesado e densidade (e suas versões `rel_`), a gusa e o histórico curto. A melhor sozinha é `rel_prop_peso_pesado`, com PR-AUC 0,35 (chute: 0,16): nada sugere vazamento. **O volume total sozinho fica no nível do chute** (0,17); densidade (0,32) e proporção de pesado (0,34) carregam o sinal.
+
+**Redundância (§7): por que não cortamos.** Há muita redundância estrutural (`h_taxa5` e `taxa_ca_ult5` são a mesma conta; `rel_` é a feature menos uma média). Na rodada da RF, a regra |r| > 0,90 + VIF < 10 tirava as repetidas. Para o Gradient Boosting, não: árvores não têm coeficientes para inflar, o VIF foi feito para modelos lineares, e o teste que importa (seção 9) mostra que tirar grupos não melhora além do ruído. O custo é na interpretação: por isso a permutação e a Aula 08 embaralham **grupos**.
+
+### Permutação por grupo na validação (§8, gráfico 02)
+
+O oficial treina no treino e prevê a validação (PR-AUC 0,450; chute 0,179). Embaralhando um grupo inteiro de cada vez:
+
+| Grupo | Queda da PR-AUC |
+|---|---|
+| **Histórico do forno** | **0,139** |
+| Massa, volume e densidade | 0,071 |
+| **Resultado do cestão 1** | 0,068 |
+| Gusa líquida | 0,045 |
+| Tempo e turno | 0,023 |
+| Materiais, ritmo, contexto do cestão 1 | ≤ 0,01 |
+| Ordem e ciclos, regime recente | ~0 (dentro do ruído) |
+
+Uma feature sozinha cai bem menos: as cópias se cobrem. A maior queda individual é a do `carga_alta_c1` (0,06), que não tem cópia.
+
+### A decisão: tirar um grupo de cada vez, no walk-forward (§9, gráfico 03)
+
+![Ablação](graficos/03_ablacao_por_grupo_walkforward.png)
+
+Mesmo protocolo da escolha do modelo: walk-forward mensal no dev, minutos de jan a jun/26 com o limiar de cada mês vindo do passado (950 min sem modelo). **Regra:** um grupo sai só se tirá-lo melhorar **além do ruído** os minutos (30 min a menos) **e** a PR-AUC (+0,02). A faixa de ruído vem das 5 variantes de hiperparâmetro, que sozinhas espalham ~575–645 min.
+
+| Conjunto | Nº | PR-AUC WF | Min. jan–jun | Δ min | Δ PR-AUC |
 |---|---|---|---|---|---|
-| `densidade_media` | peso total ÷ volume estimado (volume da camada = peso ÷ densidade do material) | cestão "fofo" ocupa mais altura para o mesmo peso | após a montagem do cestão | − | 6 |
-| `prop_peso_pesado` | peso de material pesado ÷ peso total | o pesado compacta a carga | após a montagem | − | 6 |
-| `peso_por_ciclo_t` | peso total ÷ nº de ciclos de montagem (ciclo = bloco de pesado) | ciclos "grossos" = camadas pouco intercaladas | após a montagem | + | 6 |
-| `taxa_ca_ult5` | % de corridas com carga alta entre as 5 anteriores (`shift(1)`, nunca a atual) | estado recente do forno: carga alta puxa carga alta | quando a corrida anterior termina (**confirmar com a EVCOMX**) | + | 6 |
-| `taxa_ca_ult10` | idem, 10 corridas | mesma ideia, janela mais estável | idem (**confirmar**) | + | 6 |
-| `prop_PACB` | peso de PACB ÷ peso total | pacote de chaparia: volumoso para o peso | após a montagem | + | 5 |
+| **OFICIAL** | **121** | **0,500** | **616** | — | — |
+| sem materiais | 100 | 0,503 | 587 | −30 | +0,00 |
+| sem contexto do cestão 1 | 115 | 0,504 | 598 | −18 | +0,00 |
+| sem massa, volume e densidade | 97 | 0,479 | 600 | −17 | **−0,02** |
+| oficial + 3 do Guia de Modelagem | 124 | 0,498 | 599 | −18 | −0,00 |
+| sem ritmo do forno | 117 | 0,501 | 612 | −5 | +0,00 |
+| sem o resultado do cestão 1 | 120 | 0,424 | 622 | +5 | **−0,08** |
+| sem tempo e turno | 114 | 0,496 | 624 | +7 | −0,00 |
+| sem gusa líquida | 118 | 0,485 | 625 | +9 | −0,02 |
+| sem ordem, ciclos e posição | 98 | 0,510 | 629 | +13 | +0,01 |
+| sem regime recente (`rel_`) | 107 | 0,512 | 641 | +25 | +0,01 |
+| 84 candidatas + cestão 1 | 85 | 0,469 | 660 | **+44** | −0,03 |
+| sem histórico do forno | 103 | 0,419 | 703 | **+87** | **−0,08** |
+| 6 da votação antiga | 6 | 0,415 | 744 | **+128** | **−0,09** |
+| Antigo: RF 6 features | 6 | 0,413 | 751 | **+135** | **−0,09** |
 
-**O que saiu em relação à rodada anterior:** `max_bloco_leve_m3` (de 5 para 4 votos), `prop_leve_base` (de 5 para 3) e `prop_PAEP` (de 5 para 3). As três dependem da sequência e da posição das camadas, que é justamente o que muda quando as camadas pequenas saem: o maior bloco de leve, o que está nos 30% de baixo e a participação de um material específico.
-
-**Features proibidas por vazamento** (Guia §1.2 e checklist §8.2): duração da parada (`qt_segundos_parada`), resultado do outro cestão da mesma corrida (`carga_alta_c1`, fora do conjunto final), data/hora de início como número, e qualquer dado de energia ou fusão da corrida. A `energia_estimada_mwh` das candidatas é só a soma da energia típica de cada material vezes o peso: é uma propriedade da receita, conhecida antes do despejo, não um dado medido da corrida.
+- **Nenhum grupo sai pela regra.** O mais perto é "sem materiais" (−30 min, na fronteira do ruído, PR-AUC igual): é o candidato natural a simplificar quando houver um lote novo de dados.
+- **O que não pode sair:** o histórico do forno (+87 min, −0,08) e o resultado do cestão 1 (−0,08 de PR-AUC; no teste, 131 × 165 min).
+- **As 36 features novas valem a pena:** só com as 84 candidatas, +44 min.
+- **As 3 features do Guia de Modelagem** (violação fundo/topo, colchão no topo, volume no centro) não mudam nada além do ruído: ficam de fora, como na rodada da RF.
+- **Transparência:** esta ablação já tinha sido feita na rodada 2 da otimização (31/out/2026), com a mesma conclusão ("tudo dentro do ruído"). Aqui ela é refeita de forma reproduzível.
 
 ### Respostas às perguntas do Guia (§1.3)
 
-1. **Quais features descrevem um cestão propenso a carga alta?** Pouco material pesado, baixa densidade, ciclos de montagem "grossos" e carga alta recente no forno. As mais importantes na validação, medidas por permutação: `prop_peso_pesado`, `taxa_ca_ult5`, `peso_por_ciclo_t`, `taxa_ca_ult10` e `densidade_media`.
-2. **O volume estimado é a feature mais importante?** **Não.** O volume total quase não se relaciona com a carga alta (r = −0,04). Sozinho, ele dá PR-AUC de 0,19 na validação, igual a um chute (0,18). O sinal está na densidade e na proporção de pesado: os cestões são enchidos até volumes parecidos, e o que muda é quanto peso cabe nesse volume. A física do Guia se confirma pela densidade, não pelo volume total.
-3. **Ordem e ciclos agregam além de peso e volume?** **Nesta rodada, não de forma mensurável.** Sem `peso_por_ciclo_t`, a PR-AUC na validação fica igual (0,43 contra 0,42 com ela, Random Forest). As features de ciclo são muito correlacionadas com a composição, então a informação delas já está quase toda em `prop_peso_pesado`. Mesmo assim `peso_por_ciclo_t` teve 6 votos e é a 3ª mais importante por permutação: ela fica.
-4. **Qual método de seleção gera o melhor desempenho fora da amostra?**
-   - Na validação, com Random Forest: consenso 0,43; RFE 0,43; cotovelo 0,42; L1, Elastic Net, filtro e Boruta 0,41; todas as 84, 0,40.
-   - As diferenças são pequenas (o IC 90% da validação é de ±0,08). A votação entre métodos foi mais útil que qualquer método sozinho.
-5. **Quantas features bastam?** **6 de 84.** No teste, o conjunto de 6 rende o mesmo ou mais que as 84:
-   - regressão logística: PR-AUC 0,42 com 6 contra 0,41 com 84;
-   - Random Forest: 0,38 contra 0,35.
-   Um modelo com 6 features é mais simples de explicar e de manter.
+1. **Que informação descreve um cestão propenso a carga alta?** Antes de tudo, o **estado do forno** (carga alta nas últimas corridas); depois, pouco pesado e baixa densidade, a gusa líquida e, no cestão 2, se o cestão 1 deu carga alta (aí o cestão 2 dá **menos**: 10,6% × 19,2% no dev).
+2. **O volume estimado é a feature mais importante?** **Não.** Sozinho, fica no nível do chute (correlação −0,04). O sinal está na densidade e na proporção de pesado.
+3. **Ordem e ciclos agregam além de peso e volume?** **Não de forma mensurável:** tirar o grupo inteiro muda +13 min e +0,01 de PR-AUC, dentro do ruído. A informação deles já está na composição. Ficam, porque tirá-los não melhora.
+4. **Que método de seleção rende melhor fora da amostra?** Para o Gradient Boosting, **não selecionar coluna a coluna**: a votação da rodada RF (6 features) perde ~130 min. O que funcionou foi engenharia de features com sentido físico + teste por grupo no walk-forward.
+5. **Quantas features bastam?** Para a RF, 6 bastavam. Para o modelo oficial, os grupos que pesam são histórico, cestão 1, gusa e massa/densidade; os demais estão dentro do ruído, sem atrapalhar.
 
-### Desempenho no teste (jun–ago/2026)
+### Mudança de regime em maio/2026 (gráfico 04)
 
-| Conjunto | Algoritmo | Acurácia | Recall | Precisão | F1 | ROC-AUC | PR-AUC |
-|---|---|---|---|---|---|---|---|
-| todas (84) | Reg. logística | 0,81 | 0,55 | 0,39 | 0,45 | 0,75 | 0,41 |
-| **final (6)** | **Reg. logística** | 0,58 | **0,88** | 0,24 | 0,38 | 0,77 | 0,42 |
-| final (6) | Random Forest | 0,73 | 0,69 | 0,31 | 0,42 | 0,77 | 0,38 |
-| básico do Guia (3) | Random Forest | 0,36 | 0,85 | 0,17 | 0,28 | 0,62 | 0,21 |
-
-Referências de um chute: PR-AUC = 0,15; quem sempre diz "normal" acerta 85%.
-
-O limiar foi escolhido na validação. A escolha final entre recall e precisão fica para a análise de modelos, e depende do custo de um alarme falso versus o de uma carga alta não detectada (pergunta para a EVCOMX).
-
-### Revisão pelo Guia de Modelagem (§3)
-
-**Passo a passo do Guia (§3.1) e onde cada passo está:**
-
-| Passo do Guia | Onde |
-|---|---|
-| 1. Filtros simples (constantes, quase constantes, muitos nulos) | §3: `VarianceThreshold` feito à mão (moda > 99%) e > 50% nulos |
-| 2. Redundância: \|r\| > 0,9 e VIF | §5: pares > 0,90 e VIF < 10, calculado à mão |
-| 3. Relevância univariada: point-biserial, Mann-Whitney, informação mútua | §4 |
-| 4. Importância via modelo: árvores, **permutação na validação**, L1 | §7 |
-| 5. RFECV, dentro da validação cruzada | §8 |
-| 6. Todas × selecionadas × **baseline mínimo (só volume)** | §11 e §12 |
-
-**Passo 6, com o baseline mínimo do Guia** (PR-AUC na validação, Random Forest / logística):
-
-| Conjunto | RF | Logística |
-|---|---|---|
-| todas as 84 candidatas | 0,40 | 0,34 |
-| **final (6)** | **0,42** | 0,29 |
-| só volume (baseline mínimo) | 0,19 | 0,20 |
-
-Com a Random Forest, as 6 rendem tanto quanto as 84; o volume sozinho fica no nível do chute (0,18). A logística prefere mais features (já registrado nas limitações abaixo).
-
-**Armadilhas do Guia (§3.2):**
-
-| Armadilha | Como ficou |
-|---|---|
-| Selecionar com todo o dataset e só depois dividir | Toda a seleção roda no treino. A exceção documentada é a permutação, medida na validação, como o próprio Guia sugere no passo 4 ("permutation importance em conjunto de validação"). Ela não toca o teste, mas deixa a nota da validação otimista (verificação, item 1.3d). |
-| Feature "boa demais" | Nenhuma feature sozinha passa de PR-AUC 0,34 na validação (a melhor é a regra do histórico). Nada sugere vazamento; o histórico foi recalculado do arquivo bruto com `shift(1)` na verificação (1.4b). |
-| Descartar por correlação linear baixa | Informação mútua, Boruta e permutação enxergam relações não lineares; uma feature com correlação baixa ainda pode receber até 4 votos. |
-| Escolher só pelo número | Toda feature final tem justificativa física (tabela acima). |
-
-**Features sugeridas pelo Guia de Modelagem (§2.2) e testadas à parte (seção 11b).** Três features de estrutura ainda não estavam entre as candidatas: a violação da regra leve–pesado–leve (o cestão não começa ou não termina com leve), o "colchão" de leve no topo e a proporção do volume nas camadas centrais.
-
-| Feature | Correlação no treino | Taxa / média com e sem carga alta (treino) | Conjunto final + ela: PR-AUC validação (RF / logística) |
-|---|---|---|---|
-| `violacao_fundo_topo` | −0,04 | com violação: 12% de carga alta; sem: 17% | 0,42 / 0,28 |
-| `colchao_topo_m3` | +0,11 | 9,2 m³ com carga alta; 7,7 m³ sem | 0,40 / 0,28 |
-| `prop_vol_centro` | −0,08 | 0,32 com carga alta; 0,34 sem | 0,43 / 0,29 |
-| *referência: conjunto final* | | | *0,42 / 0,29* |
-
-- **A violação da ordem não aumenta o risco no treino:** ali, os cestões que fogem da regra têm **menos** carga alta (12% contra 17%). Uma explicação possível: com vários ciclos leve → pesado → misto → leve por cestão (correção da EVCOMX), começar ou terminar com misto ou pesado não é, por si, erro de montagem. **Depois de maio a relação se inverte** (21% com violação contra 13% sem, validação + teste; verificação, seção 6.3). Com o regime novo, ela merece ser testada de novo quando houver mais dados.
-- Nenhuma das três melhora o conjunto final além do ruído (a variação só pela semente é ~0,01; o IC 90% da validação, ±0,08). **O conjunto final não muda.**
-- **Por que à parte e não como candidatas:** numa rodada de teste com as três na votação (feita ainda com o corte antigo, só peso zero), nenhuma passou de 4 votos, mas a presença delas mudou a ordem da multicolinearidade e do RFE, e o cotovelo caiu para as 5 features com 6 votos.
-
-**O conjunto de 5 rende o mesmo que o de 6.** A curva (`curva_n_features.csv`) mostra a PR-AUC da Random Forest na validação: 0,422 com as 5 primeiras (as de 6 votos) e 0,416 com as 6. A diferença está dentro do ruído. Mantivemos as 6 porque a regra do cotovelo foi fixada antes (98% do máximo da curva suavizada) e trocar agora seria escolher olhando a validação de novo. Se a EVCOMX preferir um modelo mais simples, as 5 features (`densidade_media`, `prop_peso_pesado`, `peso_por_ciclo_t`, `taxa_ca_ult5`, `taxa_ca_ult10`) são a alternativa natural, e agora diferem do conjunto final só por `prop_PACB`.
+O treino vai até 25/04/2026; validação e teste caem num período em que o processo mudou: menos pesado, menos ciclos por cestão, densidade menor, com a mesma taxa de carga alta. Por isso existem as features `rel_` (a composição "para a época": o PSI delas contra o treino fica em 0,1–0,3, contra 1,0–1,5 das brutas; verificação, seção 5) e o walk-forward re-treina todo mês.
 
 ### Limitações e perguntas para a EVCOMX
 
-- **Timing do histórico (crítico).** `taxa_ca_ult5/10` usa o resultado das corridas anteriores. Isso vale **se**, na hora de prever, já se sabe se a corrida anterior teve carga alta. A dependência é grande: sem o histórico, a PR-AUC na validação cai de 0,42 para 0,30 (Random Forest) e de 0,29 para 0,20 (regressão logística, quase o chute). **Confirmar com a EVCOMX.** Se não valer, use `dataset_features_completo.csv` sem as colunas `taxa_ca_*`.
-- **`carga_alta_c1` como feature do cestão 2** melhora pouco a validação (0,42 → 0,43) e depende do timing. Ficou fora do conjunto final.
-- **Mudança de regime em maio/2026.** Desde maio há menos material pesado, menos ciclos por cestão e densidade menor. A taxa de carga alta continua igual, mas a relação "mais pesado → menos carga alta" enfraquece. O treino termina em 25/04, então validação e teste estão no regime novo. Perguntar o que mudou: regra de montagem, fornecedor, forno ou critério de registro.
-- **Corte de 2.000 kg.** Nem tudo abaixo de 2 t parece gancho vazio (entre 100 kg e 2 t a mediana é ~1,6 t). A verificação (seção 5c-bis) refaz as features com cortes de 0, 100, 1.000 e 2.000 kg e mede o modelo: a PR-AUC muda menos de 0,03, dentro do ruído. A seleção de features **não** foi refeita para cada corte: com o corte antigo ela escolhia 9 features (as 6 de hoje mais `max_bloco_leve_m3`, `prop_leve_base` e `prop_PAEP`).
-- **Escolha da regressão logística.** Ela rende melhor com mais features. Se a seleção de algoritmos escolher regressão logística, vale testar o consenso de ≥ 4 votos (18 features), disponível no `dataset_features_completo.csv`.
-- **Variação entre versões.** Os números podem mudar um pouco com outra versão do scikit-learn.
+- **Timing do histórico.** O histórico usa o resultado da corrida anterior. Se ele não estiver pronto na hora de prever, há a versão `_lag2` (pula uma corrida): na seleção, ela perde pouco (643 × 616 min no dev; no teste, 148 × 131).
+- **`carga_alta_c1`.** Confirmado pela EVCOMX; se faltar, o app usa a reserva (as 120 features sem ele).
+- **Muitas features correlacionadas.** Não atrapalham o desempenho, mas dividem a importância entre as cópias. Leia a importância por grupo.
+- **Corte de 2.000 kg.** A verificação refaz as features com cortes de 0, 100, 1.000 e 2.000 kg e re-treina o oficial: a PR-AUC no teste varia de 0,57 a 0,58.
+- **scikit-learn 1.9.1.** Com outra versão, os números podem mudar um pouco.

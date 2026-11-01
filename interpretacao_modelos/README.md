@@ -2,173 +2,179 @@
 
 Segue a **Aula 08 do bootcamp** (Interpretação de Modelos) e vem depois de `verificacao_validacao/`: primeiro se valida, depois se interpreta.
 
-**Esta etapa não escolhe nada e não muda o modelo.** O modelo explicado é o que vai para uso: a Random Forest do plano A (`selecao_algoritmos/modelo_final_planoA.joblib`, treinada em treino + validação, 6 features). As explicações são feitas no **teste** (jun–ago/2026, 515 cestões, 75 cargas altas), que esse modelo nunca viu, como pede a aula. Olhar o teste aqui não decide nada.
+**Esta etapa não escolhe nada e não muda o modelo.** O modelo explicado é o **oficial**, a média de 5 Gradient Boosting com 121 features, **treinado no dev** (`selecao_algoritmos/modelo_dev.joblib`). As explicações são feitas no **teste** (24/jun a 4/ago/2026, 515 cestões, 75 cargas altas), que esse modelo nunca viu.
 
-Parte do que a aula pede já estava em `analise_modelos/` (seção 11d): dependência parcial + ICE, contribuições por caminho das árvores (Saabas) e as regras para o pátio. Esta pasta completa o que faltava.
+> **Antes (out/2026), esta pasta explicava a Random Forest de 6 features**, com Shapley exato "na mão" (2⁶ = 64 combinações). Está em [`historico_rf6/`](historico_rf6/README.md).
 
 ### Como rodar
 
-1. As cinco etapas anteriores, em ordem (a última é `verificacao_validacao/verificacao_validacao.py`).
-2. `interpretacao_modelos/interpretacao_modelos.py` (células `#%%`) ou `interpretacao_modelos.ipynb` (mesmo conteúdo, já executado). Leva ~1,5 min.
+1. As etapas anteriores, em ordem.
+2. `interpretacao_modelos/interpretacao_modelos.py` (células `#%%`) ou `interpretacao_modelos.ipynb` (mesmo conteúdo, já executado). Leva ~1 min.
 
-**Sem pacotes novos.** `shap` e `lime` não estão no `requirements.txt`. Com só 6 features dá para calcular os **valores de Shapley exatos** testando as 2⁶ = 64 combinações de colunas (é o que o `shap` faz no modo "intervencional"), e o LIME é uma regressão linear ponderada em ~15 linhas. A ideia é a mesma dos pacotes, e o código mostra a conta.
+**SHAP sem o pacote `shap`.** Com 121 features não dá para enumerar as combinações (2¹²¹). O pacote `shap` não pôde ser instalado no ambiente onde o projeto rodou, então `treeshap_hgb.py` implementa o **TreeSHAP exato** do `shap.TreeExplainer` (modo "tree_path_dependent"), lendo as árvores do `HistGradientBoostingClassifier`. Três conferências:
+- em todos os 515 cestões, **referência + soma dos SHAP = saída do modelo** (erro de 4e-15; o script para se não fechar);
+- em 40 árvores, o resultado bate com o **Shapley calculado por força bruta**, combinação por combinação (diferença de 3e-17);
+- se o `shap` estiver instalado na sua máquina (`pip install shap`), o script compara os dois e mostra a diferença.
 
-O script **para com erro** se o `.joblib` não for a receita do plano A em treino + validação, ou se a soma dos valores de Shapley não fechar com a chance prevista.
+O script também para se o modelo explicado não der exatamente as chances da seleção.
 
 ### Arquivos gerados
 
 | Arquivo | O que é |
 |---|---|
-| `importancia_global.csv` | Cada feature por cinco réguas: `feature_importances_`, permutação no teste, coeficiente da logística, SHAP e Saabas |
-| `coeficientes_logistica.csv` | Coeficientes padronizados, `e^coef` (odds) e estabilidade em 300 reamostragens |
-| `arvore_rasa_regras.txt` | Árvore de 3 níveis em texto (`export_text`) |
+| `coeficientes_logistica.csv` | Logística de 10 features (caixa de vidro): coeficientes, odds e estabilidade em 300 reamostragens |
+| `arvore_rasa_regras.txt` | Árvore de 3 níveis que **imita** o oficial, com a fidelidade |
+| `importancia_global.csv`, `importancia_por_grupo.csv` | \|SHAP\| médio e permutação no teste, por feature e por grupo |
 | `pdp_casos_impossiveis.csv` | Quantos pontos do PDP são combinações que não existem nos dados |
-| `lime_estabilidade.csv` | LIME do falso negativo em 20 execuções, ao lado do SHAP do mesmo cestão |
-| `contrafactuais_teste.csv` e `contrafactuais_resumo.csv` | Quanto pesado a mais tiraria cada cestão alarmado do alarme |
-| `vies_cestao1_cestao2.csv` e `motivo_dos_alarmes.csv` | O modelo trata igual o cestão 1 e o 2? Quantos alarmes são "só histórico"? |
-| `explicacoes_alarmes_teste.csv` | Os 175 alarmes do teste explicados em 3 frases, em linguagem do pátio |
-| `graficos/` | 5 figuras para a apresentação |
-
-### Roteiro da aula (slide 42) e onde está cada passo
-
-| Passo | Onde |
-|---|---|
-| 1. Valide o modelo antes de interpretar | `verificacao_validacao/` (31 conferências) + seção 0 aqui |
-| 2. Defina quem vai receber a explicação | tabela abaixo |
-| 3. Importância global por permutação | seção 2, gráfico 01 |
-| 4. Forma do efeito com PDP e ICE | seção 3, gráfico 02 (e gráfico 10 da análise) |
-| 5. Explique casos com SHAP ou LIME | seções 4 e 5, gráficos 03 a 05 |
-| (contrafactuais, slide 35) | seção 6 |
-| 6. Verifique viés e casos estranhos | seção 7 |
-| 7. Traduza para a linguagem do negócio | seção 8 e o fim deste README |
+| `lime_estabilidade.csv` | LIME por grupo no falso negativo, 20 execuções, ao lado do SHAP |
+| `contrafactuais_teste.csv`, `contrafactuais_resumo.csv` | Quantas toneladas de leve trocadas por pesado tirariam cada alarme |
+| `vies_cestao1_cestao2.csv`, `motivo_dos_alarmes.csv` | Cestão 1 × 2; o que puxa cada alarme |
+| `explicacoes_alarmes_teste.csv` | Os 148 alarmes e as 18 cargas altas perdidas do teste explicados em 3 frases |
+| `treeshap_hgb.py` | O TreeSHAP para Gradient Boosting |
+| `graficos/` | 4 figuras |
 
 ### Quem recebe a explicação (slide 9)
 
 | Quem | O que quer saber | O que mostramos |
 |---|---|---|
-| O grupo e o professor (cientistas de dados) | O modelo aprendeu algo errado? | As cinco réguas de importância, PDP/ICE, SHAP × Saabas, LIME |
-| Gestão da EVCOMX | Posso confiar e agir com base nisso? | Três fatores em linguagem de pátio, o que o modelo **não** sabe e o empate com a regra do histórico |
-| Operador do pátio | Por que **este** cestão foi alarmado? O que eu mudo? | A explicação de 3 frases por alarme e o contrafactual em toneladas de pesado |
-| Auditoria (aqui, a própria EVCOMX) | O modelo trata casos iguais de forma diferente? | Cestão 1 × cestão 2, alarmes "só histórico" |
+| O grupo e o professor | O modelo aprendeu algo errado? | Importância por grupo, PDP/ICE com casos impossíveis, SHAP × permutação, LIME |
+| Gestão da EVCOMX | Posso confiar e agir com base nisso? | Os quatro sinais em linguagem de pátio, o que o modelo **não** sabe |
+| Operador do pátio | Por que **este** cestão foi alarmado? O que eu mudo? | A explicação de 3 frases e o contrafactual em toneladas |
+| Auditoria (a própria EVCOMX) | O modelo trata casos iguais de forma diferente? | Cestão 1 × cestão 2, o que puxa cada alarme |
 
 ---
 
-### 1. Modelos transparentes (slides 16 a 20)
+### 1. Modelos transparentes, a "caixa de vidro" (slides 16 a 20)
 
-Logística com `StandardScaler` e árvore de 3 níveis, nas mesmas 6 features e nos mesmos dados (treino + validação).
+**Logística com 10 features** (uma ou duas de cada grupo), padronizadas, treinada no dev:
 
-| Feature | Coef. por desvio-padrão | Odds × a cada desvio-padrão | Sinal trocado nas reamostragens |
+| Feature | Coef. por desvio-padrão | Odds × por desvio-padrão | Sinal trocado nas reamostragens |
 |---|---|---|---|
-| `taxa_ca_ult5` | +0,55 | **× 1,73** | 0% |
-| `prop_peso_pesado` | −0,51 | **× 0,60** | 0% |
-| `densidade_media` | −0,26 | × 0,77 | 2% |
-| `prop_PACB` | +0,22 | × 1,24 | 0% |
-| `peso_por_ciclo_t` | +0,17 | × 1,18 | 1% |
-| `taxa_ca_ult10` | +0,12 | × 1,12 | **16%** |
+| `h_ewm2` (histórico recente) | +0,86 | **× 2,37** | 0% |
+| `carga_alta_c1` (cestão 1 deu) | −0,45 | **× 0,64** | 0% |
+| `gusl_t` (gusa líquida) | +0,35 | × 1,42 | 0% |
+| `densidade_media` | −0,30 | × 0,74 | 1% |
+| `prop_peso_pesado` | −0,28 | × 0,76 | 2% |
+| `rendimento_medio` | −0,26 | × 0,77 | 0% |
+| `eh_cestao_2` | +0,22 | × 1,25 | 0% |
+| `peso_por_ciclo_t` | +0,19 | × 1,20 | 0% |
+| `taxa_ca_ult10` | −0,13 | × 0,88 | 9% |
+| `intervalo_medio_min` | +0,02 | × 1,02 | **33%** |
 
-- **Leitura (slide 18):** a cada desvio-padrão a mais de histórico recente (~1,5 corrida com carga alta nas últimas 5), a razão de chances de carga alta é multiplicada por 1,7. A cada desvio-padrão a mais de pesado (~14 pontos percentuais do peso), ela cai 40%. Todos os sinais batem com a física e com a análise.
-- **Colunas parecidas (slide 17):** `taxa_ca_ult10` troca de sinal em 16% das reamostragens. Ela anda junto com `taxa_ca_ult5` (correlação 0,85), e o coeficiente fica com "o que sobra". Não dá para ler a direção dela sozinha.
-- **Árvore rasa** (`arvore_rasa_regras.txt`): a primeira pergunta é a densidade (≤ 0,90 t/m³), depois o histórico e a proporção de pesado (cortes em 16% e 20%). Todo cestão denso (> 0,90 t/m³) vai para "normal".
-- **Desempenho × interpretabilidade (slide 14):** no teste, a logística tem PR-AUC **0,44**, a Random Forest de uso 0,40 e a árvore rasa 0,31. O teste não serve para escolher, e na validação a floresta ficou bem na frente (0,43 contra 0,29). Mas na CV temporal a logística também ia melhor (0,45 contra 0,41), e a feature selection já tinha visto 0,42 no teste: só a validação (abr–jun) favorece a floresta. Pela "escada" da Aula 05, vale levar a pergunta para a apresentação: se a logística empata, ela é mais fácil de explicar.
+- **Leitura (slide 18):** a cada desvio-padrão a mais de histórico recente, as chances de carga alta mais que dobram. Se o cestão 1 deu carga alta, as do cestão 2 caem 36%. Gusa, densidade e pesado têm o sentido físico esperado.
+- **Colunas parecidas (slide 17):** `taxa_ca_ult10` anda junto com `h_ewm2` e fica com "o que sobra" (sinal negativo, instável em 9%). O intervalo entre camadas não tem sinal confiável.
+- **A logística de 10 features chega a PR-AUC 0,52 no teste** (o oficial, 0,57). O teste não serve para escolher, mas o dado reforça o que a seleção já registrou: uma versão simples fica perto, e vale reavaliá-la com o próximo lote.
 
-### 2. Importância global: três réguas, três ordens (slides 22, 23 e 38; gráfico 01)
+**Árvore de 3 níveis que imita o oficial** (`arvore_rasa_regras.txt`): primeiro pergunta se o cestão tem mais de 20% de pesado; depois, o histórico recente; depois, o resultado do cestão 1, a gusa ou a densidade. Com pouco pesado, histórico agitado e cestão 1 sem carga alta, a chance média é **70%**; com o cestão 1 tendo dado carga alta, cai para 23%. **Fidelidade no teste: R² 0,62 e a mesma decisão de alarme em 83% dos cestões.** Serve para mostrar a lógica, não para substituir o modelo (PR-AUC 0,40).
 
-| Feature | `feature_importances_` | Permutação no teste | Logística | SHAP |
-|---|---|---|---|---|
-| `taxa_ca_ult5` | 5º | **1º** | **1º** | 2º |
-| `taxa_ca_ult10` | 4º | 2º | 6º | 3º |
-| `densidade_media` | 2º | 3º | 3º | 4º |
-| `peso_por_ciclo_t` | 3º | 4º | 5º | 5º |
-| `prop_peso_pesado` | **1º** | 5º | 2º | **1º** |
-| `prop_PACB` | 6º | 6º | 4º | 6º |
+### 2. Importância global: por feature e por grupo (slides 22, 23 e 38; gráfico 01)
 
-- **O erro do `feature_importances_` aparece ao vivo (slide 22).** Ele põe o histórico em 4º e 5º. As duas `taxa_ca` só têm 6 e 11 valores possíveis, contra ~2.900 da densidade e da proporção de pesado; a impureza favorece as colunas com muitos valores. A permutação, medida no teste, põe o histórico em 1º e 2º.
-- **Os modelos concordam no que importa (exercício, item 2).** Histórico recente e proporção de pesado estão no topo da logística, do SHAP e (somando o par do histórico) da permutação. `prop_PACB` é a última em quase todas.
-- **A permutação subestima `prop_peso_pesado`:** 5º lugar, com desvio maior que a média. Ela tem correlação 0,84 com a densidade e −0,72 com o peso por ciclo; embaralhada sozinha, as outras duas cobrem a falta.
-- **Permutação em grupo (slide 38).** Embaralhando as duas `taxa_ca` juntas, a PR-AUC cai **0,21**; a soma das quedas individuais era 0,17. A receita inteira (densidade, pesado, peso por ciclo e PACB) cai 0,09, contra 0,07 somando. **O histórico do forno vale mais que o dobro da receita do cestão para este modelo.**
+![Importância](graficos/01_importancia_global.png)
+
+| Grupo | \|SHAP\| médio | Permutação do grupo (queda PR-AUC no teste) | Soma das permutações individuais |
+|---|---|---|---|
+| **Histórico do forno** | **0,62** | **0,31** | 0,11 |
+| Gusa líquida | 0,39 | 0,01 | 0,00 |
+| Massa, volume e densidade | 0,37 | 0,05 | 0,03 |
+| Regime recente (`rel_`) | 0,26 | 0,05 | 0,01 |
+| Ritmo do forno | 0,22 | 0,01 | 0,00 |
+| Tempo e turno | 0,19 | 0,01 | 0,00 |
+| **Resultado do cestão 1** | 0,16 | **0,15** | 0,14 |
+| Ordem, ciclos e posição | 0,15 | 0,01 | 0,00 |
+| Materiais | 0,14 | 0,01 | 0,00 |
+| Contexto do cestão 1 (receita) | 0,07 | 0,00 | 0,01 |
+
+- **O histórico do forno é o maior sinal pelas duas réguas.** Embaralhado como grupo, a PR-AUC cai 0,31; somando as quedas das 18 colunas uma a uma, só 0,11. É o efeito das cópias (slide 38): uma coluna embaralhada é coberta pelas outras.
+- **O resultado do cestão 1 é uma coluna só e pesa 0,15 na permutação.** No SHAP médio ele parece pequeno porque vale 0 em todo cestão 1 e na maioria dos cestões 2: quando é 1, empurra a chance para baixo com força (até −1,5 em log-odds).
+- **As duas réguas discordam sobre a gusa:** SHAP alto, permutação baixa. A gusa separa muito bem as corridas **sem** gusa (quase nunca dão carga alta, gráfico 03), mas essas são poucas no teste (18 de 515): embaralhar a coluna mexe pouco na ordem.
+- **Caso estranho:** `dia_semana` está no top 6 do SHAP. Não tem explicação física óbvia; pode ser um efeito de turno/equipe, ou ruído que o modelo aprendeu. Vale perguntar ao pátio se há diferença de rotina entre os dias.
 
 ### 3. PDP, ICE e os "casos impossíveis" (slides 24 a 26 e 38; gráfico 02)
 
-- **`prop_peso_pesado` tem um degrau:** a chance média fica em ~0,40 até ~16–20% de pesado e cai para ~0,25 acima de 20%. O mesmo corte de 20% aparece na árvore rasa. As linhas ICE mostram que o degrau é forte nos cestões de risco alto e quase some nos de risco baixo: o efeito depende das outras colunas.
-- **`taxa_ca_ult5`** sobe de 0,26 para 0,52, e sobe em **100%** dos cestões (todas as linhas ICE sobem).
-- **Casos impossíveis.** Para desenhar o PDP de `taxa_ca_ult5`, o scikit-learn cria cestões com 5 cargas altas nas últimas 5 corridas e **zero** nas últimas 10. Isso não pode acontecer. **57%** dos pontos desse PDP caem em combinações que não existem nos dados (célula da grade com menos de 3 cestões reais). Para `prop_peso_pesado` com a densidade fixa, são 10%. A forma da curva vale como ilustração; o tamanho do efeito, não.
+| Feature | Sentido | Chance de… → … | Linhas ICE no mesmo sentido | Pontos do PDP em combinações quase inexistentes |
+|---|---|---|---|---|
+| `prop_peso_pesado` | desce | 0,19 → 0,15 | 95% | 24% (com a densidade parada) |
+| `h_ewm2` | sobe | 0,14 → 0,24 | 100% | **59%** (com `taxa_ca_ult5` parada) |
+| `gusl_t` | sobe | 0,08 → 0,17 | 100% | 3% |
+| `densidade_media` | desce | 0,17 → 0,15 | 100% | 27% |
 
-### 4. SHAP (slides 28 a 31; gráficos 03 e 04)
+- Os sentidos batem com a física e com a verificação (seção 6.3).
+- **Os efeitos parecem pequenos no PDP porque ele mexe numa coluna só.** Mudar só `prop_peso_pesado`, com a densidade, as `rel_` e o peso por ciclo parados, cria cestões que não existem (24% dos pontos). Para o histórico, 59%: um forno com média exponencial alta e nenhuma carga alta nas últimas 5 corridas não acontece. A forma da curva vale como ilustração; o tamanho, não. Por isso o contrafactual (seção 6) recalcula a receita inteira.
 
-Valores de Shapley exatos, com 200 cestões de referência do treino + validação. A chance média de referência é **0,25** (crua: os pesos balanceados inflam as chances; a calibração da análise corrige isso sem mudar a ordem). Em todos os 515 cestões, **referência + soma dos valores = chance prevista**, e o script confere.
+### 4. SHAP (slides 28 a 31; gráfico 03)
 
-- **Visão geral (beeswarm):** pouco pesado (azul) empurra para cima, até +0,28; histórico alto (vermelho) também, até +0,22. `prop_PACB` é zero na maioria dos cestões e quase não mexe.
-- **SHAP × Saabas:** a decomposição usada na análise conta a mesma história (correlação de 0,82 a 0,97, cestão a cestão), mas dá mais crédito ao `peso_por_ciclo_t` e ao `taxa_ca_ult10`. É a diferença na divisão das interações.
-- **O cestão de maior chance** (O7144 c2, 23/07, chance 0,98, deu carga alta): pouco pesado (10%, **+0,26**), 5 cargas altas nas últimas 5 corridas (+0,19), camadas grossas (34 t por ciclo, +0,10), cestão fofo (0,72 t/m³, +0,09).
-- **O falso negativo mais "certo" (exercício, item 4)** (O6827 c2, 07/07, chance 0,06, deu carga alta). O modelo deixou passar porque **o forno estava calmo**: nenhuma carga alta nas últimas 10 corridas (−0,10) e nas últimas 5 (−0,05). A receita era normal, levemente boa (29% de pesado, 0,86 t/m³). Nada nas 6 features indicava risco. É o mesmo cestão que a análise já tinha mandado para o especialista (`analise_modelos/casos_para_especialista.csv`).
+![SHAP](graficos/03_shap_visao_geral_e_dois_cestoes.png)
 
-### 5. LIME (slides 32 a 34; gráfico 05)
+A referência é a saída média do modelo na escala dele, equivalente a **~9% de chance** (a média das chances é ~16%; poucos cestões de risco alto puxam a média). Para falar em **pontos de chance**, a diferença "chance do cestão − referência" é dividida entre os grupos na proporção dos SHAP de cada grupo; a conta continua fechando.
 
-No mesmo falso negativo, 20 execuções com sementes diferentes:
-- **A direção não muda e as 3 colunas principais são as mesmas nas 20 execuções** (as duas `taxa_ca` e a densidade). O tamanho dos coeficientes varia ~10% de uma execução para outra, e `prop_PACB` troca de sinal em 5% delas. É a instabilidade do slide 34, aqui pequena.
-- **LIME e SHAP respondem perguntas diferentes.** O LIME dá `taxa_ca_ult5` com coeficiente **+0,05**: "se o histórico subisse, a chance subiria". O SHAP dá **−0,05**: "o histórico deste cestão (zero) puxou a chance para baixo da média". As duas frases são verdadeiras ao mesmo tempo. Para explicar um caso ao pátio, o SHAP é o certo, porque a conta fecha; o LIME mostra para onde o modelo é sensível.
+- **O cestão de maior chance** (O7174 c2, chance 86%, deu carga alta, parada de 9 min): **0% de pesado e 0,64 t/m³** (+26 pontos), forno com 4 cargas altas nas últimas 5 corridas (+22), gusa (+10).
+- **O falso negativo mais "certo"** (O6558 c2, chance 2%, deu carga alta): o modelo deixou passar porque **o forno estava calmo** (nenhuma carga alta nas últimas 5 corridas, −4 pontos) e o ritmo e o regime recente também seguravam. A receita era só levemente fofa (0,77 t/m³, 17% de pesado). Nada no que o modelo vê indicava risco: é o ponto cego já visto na análise (forno calmo = economia de 18%).
+
+### 5. LIME (slides 32 a 34; gráfico 04)
+
+No mesmo falso negativo, **por grupo** (com 121 colunas, perturbar coluna a coluna cria cestões impossíveis), 20 execuções:
+- **Os três grupos principais são os mesmos do SHAP e não trocam de sinal:** histórico (−8 pontos no LIME, −4 no SHAP), ritmo e gusa.
+- **Os grupos pequenos são instáveis:** materiais, resultado do cestão 1 e ordem/ciclos trocam de sinal em 25–35% das execuções. É a instabilidade do slide 34.
+- **LIME e SHAP respondem perguntas diferentes:** o LIME mede para onde o modelo é sensível perto deste cestão; o SHAP divide a conta deste cestão. Para explicar um caso ao pátio, o SHAP é o certo, porque a conta fecha.
 
 ### 6. Contrafactuais: o que mudaria o alarme? (slide 35)
 
-Para os 175 cestões alarmados no teste (corte F2, 0,41), procuramos o menor aumento na proporção de pesado que tiraria o cestão do alarme. O histórico não entra: ele não se muda na hora de montar o cestão.
+Para os 148 cestões alarmados no teste: quantas toneladas de leve trocadas por pesado (gusa sólida, no topo) tirariam o cestão do alarme? A receita é **recalculada inteira**, como no app (densidade, proporções, ciclos, posição e `rel_` mudam juntas). Histórico, gusa líquida e resultado do cestão 1 não se mudam na montagem.
 
-| | Cestões alarmados | Pesado a mais, mediana | Em toneladas, mediana |
+| Forno | Alarmes | Saem do alarme com até 15 t | Toneladas, mediana |
 |---|---|---|---|
-| Todos | 175 | +9 pontos percentuais | ~3,8 t |
-| Forno calmo (< 2 cargas altas nas últimas 5) | 45 | +5 p.p. | ~1,4 t |
-| Forno agitado (≥ 2 nas últimas 5) | 130 | +12 p.p. | ~5,1 t |
+| Calmo (< 2 cargas altas nas últimas 5) | 33 | **82%** | **1 t** |
+| Agitado (≥ 2 nas últimas 5) | 115 | 48% | 4 t |
+| Todos | 148 | 55% | 3 t |
 
-- **Versão coerente:** quando o pesado sobe, a densidade sobe e o peso por ciclo cai junto, pela relação observada nos dados (+10 p.p. de pesado ≈ +0,09 t/m³ e −4,3 t por ciclo).
-- **Versão ingênua** (só o pesado sobe, densidade parada): em **22%** dos casos, a solução cai numa combinação de pesado e densidade que não existe nos dados. No forno agitado, 29%. É o "seja 10 anos mais jovem" do slide 35: o modelo responde, mas o cestão não existe.
-- **Isto não é uma receita para o pátio.** É o que mudaria a resposta **do modelo**. Se trocar 4 t de leve por pesado evita a carga alta no forno de verdade é uma pergunta de causa (slide 37), que só um teste no pátio responde.
+- **Com o forno calmo, o alarme é quase sempre "da receita"**, e pouco pesado a mais resolve. Com o forno agitado, metade dos alarmes não sai nem com 15 t: o risco vem do histórico, que a montagem não muda.
+- **Versão ingênua** (só `prop_peso_pesado` sobe, o resto parado): pede uma mediana de +12 pontos percentuais de pesado, e gera exatamente o tipo de cestão impossível da seção 3.
+- **Isto não é uma receita para o pátio.** É o que mudaria a resposta **do modelo**. Se trocar 3 t de leve por pesado evita a carga alta no forno de verdade é uma pergunta de causa, que só um piloto responde (`otimizacao_minutos/`, cenário 2).
 
 ### 7. Viés e casos estranhos (slide 39)
 
-Não há pessoas sendo decididas pelo modelo, então não há grupo protegido. O equivalente aqui é: o modelo trata igual situações iguais?
+| | Cestões | Taxa real | Alarmes | Recall | Precisão | \|SHAP\| receita | \|SHAP\| histórico |
+|---|---|---|---|---|---|---|---|
+| Cestão 1 | 270 | 14% | 27% | 0,79 | 0,41 | 0,41 | 0,58 |
+| Cestão 2 | 245 | 15% | 30% | 0,73 | 0,37 | 0,66 | 0,67 |
 
-| | Cestões | Taxa de carga alta | Alarmes | Recall | Precisão | Peso da receita na decisão (\|SHAP\| médio) |
-|---|---|---|---|---|---|---|
-| Cestão 1 | 270 | 14% | 28% | 0,68 | 0,34 | 0,13 |
-| Cestão 2 | 245 | 15% | **40%** | 0,76 | 0,28 | **0,22** |
+- **O desequilíbrio da RF antiga sumiu.** Ela dava alarme em 40% dos cestões 2 contra 28% dos cestões 1, com a mesma taxa real; o oficial fica em 30% × 27%. O resultado do cestão 1 e o contexto do cestão 1 explicam o cestão 2 sem precisar "ler pouco pesado como risco".
+- **O que puxa cada alarme** (`motivo_dos_alarmes.csv`): **47% pela receita**, 43% pelo histórico, 10% pela gusa. Os alarmes do histórico acertam um pouco mais (precisão 0,41 × 0,39).
+- Caso estranho: o peso do dia da semana (seção 2).
 
-- **O cestão 2 recebe 12 pontos a mais de alarmes com quase a mesma taxa de carga alta**, e a receita pesa ~65% mais na decisão dele. No teste, o cestão 2 tem em média 13% de pesado, contra 25% do cestão 1; o modelo lê "pouco pesado" como risco, mas a taxa real de carga alta é quase a mesma. A análise já tinha visto os alarmes falsos concentrados no cestão 2. **Pergunta para a EVCOMX:** o cestão 2 é montado de outro jeito (completa o forno, entra com o banho já líquido) a ponto de "fofo" ser normal para ele?
-- **35% dos alarmes são "só histórico":** o histórico do forno empurra mais que toda a receita junta. Esses alarmes acertam mais (precisão 0,35, contra 0,28 dos alarmes puxados pela receita). Parte do modelo é, na prática, a regra "carga alta puxa carga alta", que já empatava com ele na análise e na verificação.
+### 8. Traduzir para o negócio (slide 40)
 
-### 8. Traduzir para o negócio (slide 40 e exercício, item 5)
+Cada alarme e cada carga alta perdida do teste tem uma explicação de 3 frases (`explicacoes_alarmes_teste.csv`). Exemplos:
 
-Cada alarme do teste ganhou uma explicação automática em 3 frases (`explicacoes_alarmes_teste.csv`), com os dois fatores que mais subiram a chance e o que mais segurou. Exemplos:
+> **O7174 c2 (alarme, deu carga alta):** Risco alto: o modelo deu 86 pontos de chance, contra 9 do cestão de referência. O que mais aumentou o risco: cestão fofo (0,64 t/m³, 0% de pesado) e forno com carga alta recente (4 das últimas 5 corridas). O que segurou o risco: montagem de 12 min.
 
-> **O7144 c2 (alarme, deu carga alta):** Risco alto: o modelo deu 98 pontos de chance, contra 25 de um cestão típico. O que mais aumentou o risco: pouco material pesado (10% do peso) e forno com carga alta recente (5 de 5 corridas). Nada segurou o risco.
-
-> **O6827 c2 (falso negativo, explicado para a EVCOMX):** Risco baixo: o modelo deu 6 pontos de chance, contra 25 de um cestão típico. Nenhuma característica aumentou muito o risco. O que segurou o risco: forno calmo nas últimas 10 corridas (0 de 10 corridas).
-
-E a frase do falso negativo para alguém sem formação em dados: *"O modelo não alarmou porque o forno vinha sem nenhuma carga alta havia 10 corridas e o cestão tinha uma receita normal. A carga alta veio de algo que o modelo não enxerga, como umidade ou formato da sucata. Casos assim são os que mais valem uma conversa com o pátio."*
+> **O6558 c2 (falso negativo):** Risco baixo: o modelo deu 2 pontos de chance, contra 9 do cestão de referência. O que mais aumentou o risco: 32 t de gusa líquida na corrida e cestão fofo (0,77 t/m³, 17% de pesado). O que segurou o risco: forno calmo (0 carga alta nas últimas 5 corridas).
 
 **Antes e depois (slide 40):**
 
 | Antes | Depois |
 |---|---|
-| "`prop_peso_pesado` tem SHAP médio absoluto de 0,08 e `taxa_ca_ult5` lidera a permutação." | "O que mais pesa é quanto pesado tem no cestão e se o forno teve carga alta nas últimas corridas. Com 2 ou mais cargas altas recentes, cerca de 1 em cada 4 cestões dá carga alta; com o forno calmo, 1 em 12." |
-| "O contrafactual mediano é +0,09 de `prop_peso_pesado`." | "No alarme típico, o modelo deixaria de alarmar com uns 4 t de leve trocados por pesado. Isso é o que o modelo diz, não uma garantia do forno." |
+| "O grupo histórico tem \|SHAP\| médio de 0,62 e `carga_alta_c1` derruba a PR-AUC em 0,15 quando embaralhada." | "O que mais pesa é se o forno teve carga alta nas últimas corridas e se o cestão 1 desta corrida já deu carga alta (aí o cestão 2 costuma ir bem). Depois vêm a gusa e quanto pesado tem no cestão." |
+| "O contrafactual mediano é 3 t." | "Com o forno calmo, trocar ~1 t de leve por pesado costuma tirar o alarme. Com o forno agitado, a montagem resolve só metade das vezes. Isso é o que o modelo diz, não uma garantia do forno." |
 
 ### Os limites (slides 37 e 38)
 
-- **Explicar o modelo não é explicar o forno.** O histórico é o maior sinal, mas ele é sintoma, não causa: uma fase ruim do forno ou da sucata faz várias cargas altas seguidas. "Esperar o forno acalmar" não é uma ação.
-- **Colunas correlacionadas dividem o crédito.** O histórico em duas janelas e o trio densidade/pesado/peso por ciclo trocam importância entre si conforme a régua. Leia por grupo, não por coluna.
-- **PDP e contrafactual ingênuo avaliam o modelo onde ele nunca esteve** (57% e 22% dos pontos). Por isso o contrafactual usado é o coerente.
-- **As chances são cruas.** As explicações valem para a ordem dos cestões; para falar em "% de chance" com a EVCOMX, use as chances calibradas da análise.
+- **Explicar o modelo não é explicar o forno.** O histórico é o maior sinal, mas é sintoma, não causa.
+- **Colunas correlacionadas dividem o crédito.** Leia por grupo, não por coluna.
+- **PDP e contrafactual ingênuo avaliam o modelo onde ele nunca esteve.** Por isso o contrafactual usado recalcula a receita.
+- **SHAP em log-odds, pontos de chance por proporção.** A divisão em pontos de chance é uma convenção para comunicar; a conta exata é a de log-odds.
 
 ### O que depende da EVCOMX
 
 | Pergunta | Muda o quê |
 |---|---|
-| O cestão 2 é montado de outro jeito? "Fofo" é normal para ele? | Se sim, o alarme do cestão 2 precisa de outro corte ou de uma feature que diga "cestão 2" (seção 7). |
-| Trocar leve por pesado é viável na montagem? Quanto custa? | Diz se o contrafactual (seção 6) vira uma ação possível ou só uma explicação. |
-| As explicações de 3 frases fazem sentido para o pátio? | É o teste do "Para discutir" da aula: alguém sem formação em dados entende? |
+| Por que o cestão 2 dá menos carga alta quando o cestão 1 deu? | Explica o sinal mais forte depois do histórico |
+| O dia da semana muda a rotina do pátio? | Diz se `dia_semana` é sinal real ou ruído |
+| Trocar leve por pesado é viável na montagem? Quanto custa? | Diz se o contrafactual vira ação |
+| As explicações de 3 frases fazem sentido para o pátio? | O teste do "Para discutir" da aula |
 
 ### Limitações
 
-- **O SHAP depende da referência.** Com outra amostra de 200 cestões, a chance de referência e os valores mudam um pouco (a ordem não). O modo "intervencional" trata as colunas como independentes, o que não é verdade aqui; a conta fecha, mas os pontos de referência também criam algumas combinações irreais.
-- **O LIME aqui é uma versão simples** (ruído normal, sem a discretização em quartis do pacote `lime`). Os números não são iguais aos do pacote, mas a ideia e o comportamento são.
-- **Uma explicação local por vez.** Os dois casos detalhados foram escolhidos por serem extremos (maior chance e falso negativo mais "certo"); não representam o cestão típico.
-- **O teste foi olhado de novo**, só para descrever. Nada aqui muda o modelo, as features ou os limiares.
+- **TreeSHAP próprio.** Conferido pela conta que fecha e contra o Shapley por força bruta; a comparação com o pacote `shap` roda só onde ele estiver instalado.
+- **Explicações no teste, com o modelo treinado no dev.** O modelo para uso (todos os dados) é outro ajuste da mesma receita.
+- **scikit-learn 1.9.1.**

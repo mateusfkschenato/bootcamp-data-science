@@ -1,791 +1,522 @@
 # %% [markdown]
 # # Seleção de Algoritmos e Modelagem — Predição de Carga Alta (EVCOMX)
 #
-# Segue a **Aula 05 do bootcamp** (slides citados como "slide N") e continua a pasta
-# `feature_selection/`. O roteiro é o "passo a passo da modelagem" do slide 36:
+# Segue a **Aula 05 do bootcamp** (slides citados como "slide N") e o Guia de Modelagem da EVCOMX
+# (§4), e continua `feature_selection/`.
+#
+# **Algoritmo oficial: média das probabilidades de 5 `HistGradientBoostingClassifier`** com
+# hiperparâmetros levemente diferentes, sem pesos de classe, com as 121 features oficiais
+# (120 + `carga_alta_c1`, o resultado do cestão 1).
+#
+# > **Antes (out/2026), o algoritmo escolhido era uma Random Forest com 6 features** (plano A),
+# > escolhida pela PR-AUC na validação. Ela está guardada em `historico_rf6/`. A troca veio quando
+# > a EVCOMX deu o critério de negócio: **o melhor modelo é o que faz perder menos minutos de forno**
+# > (carga alta não detectada = a duração da parada; alarme falso = 1 min). A RF continua aqui como
+# > linha de comparação.
 #
 # | Passo da aula (slide 36) | Seção |
 # |---|---|
 # | 1. Regressão ou classificação? | 1 |
-# | 2. Métrica pelo custo do erro | 2 |
-# | 3. Treino/teste separados e baseline | 3 e 4 |
-# | 4. Pipeline e 2 a 4 algoritmos | 5 |
-# | 5. Comparar com validação cruzada | 6 |
-# | Hiperparâmetros (slide 24) | 7 |
-# | Desbalanceamento: pesos × sem peso × subamostragem (Guia de Modelagem §4.4) | 7b |
-# | 6. Subir de complexidade só se valer a pena (slide 33) | 8 |
-# | Limiar de decisão (slide 16) | 9 |
+# | 2. Métrica pelo custo do erro (minutos, com a PR-AUC junto) | 2 |
+# | 3. Separação dos dados e baselines | 3 e 4 |
+# | 4. Pipeline e algoritmos | 5 |
+# | 5. Comparação justa: walk-forward mensal no dev | 6 |
+# | Hiperparâmetros e por que a média de 5 (slide 24) | 7 |
+# | Desbalanceamento: pesos × sem peso (Guia §4.4) | 7b |
+# | 6. A escada e a regra de escolha declarada antes (slide 33) | 8 |
+# | Limiar de decisão pelo custo (slide 16) | 9 |
 # | 7. Conferir no teste, uma única vez (slide 35) | 10 |
-# | Explicar o modelo escolhido | 11 |
-# | Modelo para uso e arquivos | 12 |
+# | Modelo para uso e arquivos | 11 |
 #
-# **Rode antes** `EDA/transforma_dataset.py` e `feature_selection/feature_selection.py`:
-# esta etapa lê os CSVs gerados pela feature selection e não recalcula nenhuma feature.
+# **Rode antes** `EDA/transforma_dataset.py` e `feature_selection/feature_selection.py`.
+# Leva ~15 min (cada algoritmo treina 8 vezes no walk-forward).
 
 # %%
-import warnings
-warnings.filterwarnings("ignore")
-
 import json
+import sys
+import warnings
 from pathlib import Path
+
+import joblib
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import joblib
-
-from sklearn.base import clone
-from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler
+import sklearn
 from sklearn.dummy import DummyClassifier
+from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
-from sklearn.tree import DecisionTreeClassifier, plot_tree
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
-from sklearn.model_selection import cross_validate, GridSearchCV
-from sklearn.inspection import permutation_importance
-from sklearn.metrics import (average_precision_score, roc_auc_score, accuracy_score, recall_score,
-                             precision_score, f1_score, fbeta_score, confusion_matrix, precision_recall_curve)
+from sklearn.metrics import average_precision_score, confusion_matrix, roc_auc_score
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.tree import DecisionTreeClassifier
 
-SEED = 42
-pd.set_option("display.width", 170)
-pd.set_option("display.max_columns", 40)
+warnings.filterwarnings("ignore")
+RAIZ = next(p for p in [Path.cwd(), *Path.cwd().parents] if (p / "comum").is_dir())
+sys.path.insert(0, str(RAIZ))
+from comum.protocolo import (ARQ_COMPLETO, C_FP, FINAL6, MESES_CUSTO, MESES_WF, NOME_OFICIAL, NOME_RESERVA,
+                             NOME_REGRA, NOME_RF6, RF6, VARIANTES, HGB, carregar, familia, ler_features,
+                             melhor_limiar, minutos, minutos_wf, oof_dev, prever, resumo_wf)
+
+PASTA = RAIZ / "selecao_algoritmos"
+(PASTA / "graficos").mkdir(exist_ok=True)
+pd.set_option("display.width", 220); pd.set_option("display.max_columns", 30)
 plt.rcParams.update({"figure.dpi": 110, "axes.spines.top": False, "axes.spines.right": False,
                      "axes.grid": True, "grid.color": "#e5e5e5", "grid.linewidth": 0.6, "axes.axisbelow": True})
-# mesma paleta da EDA e da feature selection
 AZUL, VERMELHO, CINZA, LARANJA, VERDE = "#2b6cb0", "#c0392b", "#7f8c8d", "#dd8a2e", "#4a8c4a"
 
 # %% [markdown]
 # ## 0. Ler os arquivos da feature selection
 #
-# - `dataset_features_completo.csv`: as 80 candidatas, a coluna `conjunto` (split 70/15/15
-#   temporal, por corrida) e `carga_alta`.
-# - `dataset_modelagem_fs.csv`: define o **conjunto FINAL** (6 features com o corte de 2.000 kg da EDA).
-# - `votos_feature_selection.csv`: define o **consenso (≥ 4 votos, 18 features)**.
-#
-# `inicio` (data do cestão) é só metadado: serve para ordenar no tempo, nunca entra no modelo.
+# - `dataset_features_completo.csv`: as 121 features oficiais e as alternativas (versões `_lag2`),
+#   o split (`conjunto`), o mês (`mes`), o alvo e a duração da parada (`min_parada`, só para medir);
+# - `features_finais.json`: as listas de features e as 5 variantes de hiperparâmetro.
 
 # %%
-RAIZ = next(p for p in [Path.cwd(), *Path.cwd().parents]
-            if (p / "feature_selection").is_dir() and (p / "original_dataset").is_dir())
-PASTA_FS = RAIZ / "feature_selection"
-PASTA_SAIDA = RAIZ / "selecao_algoritmos"
-PASTA_GRAF = PASTA_SAIDA / "graficos"
-PASTA_GRAF.mkdir(parents=True, exist_ok=True)
-
-def salvar(nome):
-    plt.tight_layout()
-    plt.savefig(PASTA_GRAF / f"{nome}.png", dpi=130, bbox_inches="tight")
-    plt.show()
-
-for arq in ["dataset_modelagem_fs.csv", "dataset_features_completo.csv", "votos_feature_selection.csv"]:
-    assert (PASTA_FS / arq).exists(), f"feature_selection/{arq} não existe: rode o feature_selection.py primeiro!"
-
-META = ["cd_corrida", "nu_carregamento", "conjunto", "inicio"]
-fs = pd.read_csv(PASTA_FS / "dataset_modelagem_fs.csv")
-df = pd.read_csv(PASTA_FS / "dataset_features_completo.csv")
-votos = pd.read_csv(PASTA_FS / "votos_feature_selection.csv", index_col=0)
-
-df["inicio"] = pd.to_datetime(df["inicio"], utc=True, format="ISO8601")
-df = df.sort_values(["inicio", "cd_corrida", "nu_carregamento"]).reset_index(drop=True)
-
-FEAT_FINAL = [c for c in fs.columns if c not in META + ["carga_alta"]]
-FEAT_CONSENSO = list(votos.index[votos["total"] >= 4])
-FEAT_SEM_HIST = [c for c in FEAT_FINAL if not c.startswith("taxa_ca_")]
-
-# conferência: os dois arquivos da feature selection descrevem os mesmos cestões
-chk = fs.merge(df[["cd_corrida", "nu_carregamento", "conjunto", "carga_alta"]],
-               on=["cd_corrida", "nu_carregamento"], suffixes=("_fs", ""))
-assert len(chk) == len(fs) == len(df), "Os CSVs da feature selection não batem entre si."
-assert (chk["carga_alta_fs"] == chk["carga_alta"]).all() and (chk["conjunto_fs"] == chk["conjunto"]).all()
-
-CONJUNTOS = {f"final ({len(FEAT_FINAL)})": FEAT_FINAL, f"consenso ({len(FEAT_CONSENSO)})": FEAT_CONSENSO,
-             f"final sem histórico ({len(FEAT_SEM_HIST)})": FEAT_SEM_HIST}
-NOME_FINAL, NOME_CONS, NOME_SEMH = list(CONJUNTOS)
-for nome, cols in CONJUNTOS.items():
-    print(f"{nome:28s} {cols}")
-
-treino = df[df.conjunto == "treino"].reset_index(drop=True)
-valid = df[df.conjunto == "validacao"].reset_index(drop=True)
-teste = df[df.conjunto == "teste"].reset_index(drop=True)
-y_tr, y_va, y_te = treino["carga_alta"], valid["carga_alta"], teste["carga_alta"]
+FEAT = ler_features()
+F_OF, F_PRINC, F_LAG2 = FEAT["features_oficial"], FEAT["features_principal"], FEAT["features_lag2"]
+D, DEV, TESTE = carregar(ARQ_COMPLETO)
+print("scikit-learn", sklearn.__version__, "| dev:", DEV.shape, "| teste:", TESTE.shape,
+      "| features oficiais:", len(F_OF))
+print(D.groupby("conjunto").agg(cestoes=("carga_alta", "size"), taxa=("carga_alta", "mean"),
+                                de=("t_ini", "min"), ate=("t_ini", "max")).loc[["treino", "validacao", "teste"]])
 
 # %% [markdown]
 # ## 1. Que tipo de pergunta? (slides 5 e 6)
 #
-# "Este cestão vai dar carga alta?" tem resposta **sim ou não**: é **classificação**.
-# Por isso a regressão linear (slide 14) fica de fora; dos cinco algoritmos da aula, entram a
-# regressão logística, a árvore de decisão, a Random Forest e o Gradient Boosting.
+# "Este cestão vai dar carga alta?" é sim ou não: **classificação**. A duração da parada não é
+# prevista (na otimização, nenhuma feature tem |Spearman| > 0,1 com ela); ela entra só como o
+# **peso** de cada carga alta perdida na régua de minutos.
 #
-# A duração da parada (`qt_segundos_parada_carga_alta`) daria um problema de regressão, mas
-# não é a pergunta da EVCOMX e só existe quando a carga alta já aconteceu.
-
-# %% [markdown]
 # ## 2. A métrica, escolhida pelo custo do erro (slides 32 e 34)
 #
-# Só ~16% dos cestões têm carga alta, então **acurácia engana** (slide 35): quem sempre diz
-# "normal" acerta ~84%. Usamos:
-# - **PR-AUC** (precisão média) para **comparar algoritmos**. Não depende do limiar e foca na
-#   classe rara. Um chute tem PR-AUC igual à taxa de carga alta (~0,16);
-# - **ROC-AUC** como segunda opinião;
-# - **recall e precisão** depois de escolher o limiar (seção 9).
+# Resposta da EVCOMX (Guima, out/2026): **o melhor modelo é o que faz perder menos minutos de forno.**
 #
-# **Qual erro custa mais caro?** (slide 32). Perguntamos à EVCOMX por e-mail em 18/10/2026:
-# alarme falso ou carga alta não detectada. Enquanto a resposta não chega, a seção 9 deixa
-# **três limiares prontos**, um para cada resposta possível.
+# | Situação | Minutos perdidos |
+# |---|---|
+# | Carga alta sem alarme (FN) | a duração real daquela parada |
+# | Alarme falso (FP) | 1 min (reajustar a montagem) |
+# | Alarme certo (TP) | 0 min no cenário principal; 1 min no cenário "TP=1" |
+# | Sem modelo | a soma de todas as paradas |
+#
+# - **Métrica de escolha: minutos perdidos** no walk-forward (seção 6).
+# - **PR-AUC junto**, como a métrica principal do grupo: ela mede a ordem dos cestões sem depender do
+#   limiar. Acurácia engana (quem sempre diz "normal" acerta ~83%).
+# - Com uma parada média de ~4 min e alarme de 1 min, compensa alarmar quando a chance passa de
+#   ~20%: **o limiar não é 0,5** (seção 9).
+
+# %%
+par = DEV[DEV.carga_alta == 1].min_parada
+print(f"Paradas no dev: média {par.mean():.1f} min, mediana {par.median():.1f} min. "
+      f"Ponto de equilíbrio aproximado: p > {C_FP / (C_FP + par.mean()):.2f}")
 
 # %% [markdown]
 # ## 3. Separação dos dados
 #
-# O split já vem pronto da feature selection (coluna `conjunto`): 70/15/15 **em ordem de
-# tempo**, por corrida, definido pelo professor.
-# - **Treino**: onde os modelos aprendem e onde roda a validação cruzada.
-# - **Validação**: onde comparamos os algoritmos já ajustados e escolhemos o limiar.
-# - **Teste**: a prova final, usada **uma única vez** na seção 10 (slide 35).
+# - **Split 70/15/15 temporal por corrida** (professor), da coluna `conjunto`.
+# - **Dev = treino + validação** (ago/25 a jun/26). Toda escolha usa só o dev.
+# - **Walk-forward mensal** (adaptação do slide 30 para dados no tempo): para cada mês de nov/25 a
+#   jun/26, o modelo treina com tudo o que veio antes e prevê o mês. É mais exigente que o `cv=5`
+#   da aula, que sorteia linhas e treinaria com o futuro. Os minutos contam de jan a jun/26
+#   (nov e dez só "aquecem" o limiar, que em cada mês vem só dos meses anteriores).
+# - **A prova de sempre:** treina no treino e prevê a validação (PR-AUC).
+# - **Teste (24/jun a 4/ago/26): aberto uma única vez**, na seção 10.
 
 # %%
-resumo_split = df.groupby("conjunto").agg(
-    cestoes=("carga_alta", "size"), taxa_carga_alta=("carga_alta", "mean"),
-    de=("inicio", "min"), ate=("inicio", "max")).loc[["treino", "validacao", "teste"]]
-resumo_split["de"] = resumo_split["de"].dt.tz_convert("America/Sao_Paulo").dt.strftime("%d/%m/%Y")
-resumo_split["ate"] = resumo_split["ate"].dt.tz_convert("America/Sao_Paulo").dt.strftime("%d/%m/%Y")
-resumo_split.round(3)
+for mth in MESES_WF:
+    n_tr = (DEV.t_ini < DEV[DEV.mes == mth].t_ini.min()).sum()
+    print(f"walk-forward {mth}: treina com {n_tr:4d} cestões, prevê {(DEV.mes == mth).sum():3d}")
+SEM_DEV = DEV[DEV.mes.isin(MESES_CUSTO)].min_parada.sum()
+print(f"Sem modelo, jan–jun/26: {SEM_DEV:.0f} min de parada")
 
 # %% [markdown]
-# ### Validação cruzada **temporal** (adaptação do slide 30)
+# ## 4. Baselines: as réguas mínimas (slides 8 a 11, Guia §4.2)
 #
-# A aula usa `cross_val_score(cv=5)`, que sorteia as linhas. Aqui isso vazaria o futuro
-# (Guia EVCOMX §2.2), e as features `taxa_ca_ult5/10` olham para as corridas anteriores.
-# Então as 5 "provas" andam no tempo, como uma janela que cresce:
-#
-# | Prova | Treina com | Avalia em |
-# |---|---|---|
-# | 1 | bloco 1 | bloco 2 |
-# | 2 | blocos 1–2 | bloco 3 |
-# | … | … | … |
-# | 5 | blocos 1–5 | bloco 6 |
-#
-# Os blocos são feitos por corrida: os dois cestões da mesma corrida ficam sempre juntos.
+# - **Sem modelo** (nunca alarmar): perde todas as paradas. **Maioria** (`DummyClassifier`): a mesma
+#   chance para todos, PR-AUC = taxa de carga alta;
+# - **física, regra de volume:** quanto maior o volume estimado, maior o risco (é o que a operação
+#   faria sem ML; Guia §4.2);
+# - **regra do histórico:** a taxa de carga alta nas 5 corridas anteriores. Sem modelo nenhum, é a
+#   régua que de fato aperta (análise de modelos, rodada da RF);
+# - **estatística:** a regressão logística (seção 5).
 
 # %%
-def dobras_temporais(dados, n_blocos=6):
-    ordem = dados.groupby("cd_corrida")["inicio"].min().sort_values()
-    bloco_corrida = pd.Series(np.arange(len(ordem)) * n_blocos // len(ordem), index=ordem.index)
-    bloco = dados["cd_corrida"].map(bloco_corrida).to_numpy()
-    return [(np.where(bloco <= k)[0], np.where(bloco == k + 1)[0]) for k in range(n_blocos - 1)]
+def wf_score(col):
+    w = DEV[DEV.mes.isin(MESES_WF)].copy(); w["p"] = w[col].fillna(0).values
+    return w
 
-CV = dobras_temporais(treino)
-periodo_dobra = []
-for i, (a, b) in enumerate(CV, 1):
-    ini = treino.loc[b, "inicio"].min().tz_convert("America/Sao_Paulo")
-    fim = treino.loc[b, "inicio"].max().tz_convert("America/Sao_Paulo")
-    periodo_dobra.append(f"{ini:%d/%m}–{fim:%d/%m}")
-    print(f"Prova {i}: treina {len(a):4d} cestões | avalia {len(b):3d} ({periodo_dobra[-1]}), "
-          f"taxa de carga alta {treino.loc[b, 'carga_alta'].mean():.2f}")
+
+resultados, oofs = [], {}
+for nome, col in [("Baseline: maioria (DummyClassifier)", None), ("Baseline físico: regra de volume", "volume_m3_total"),
+                  (NOME_REGRA, "taxa_ca_ult5")]:
+    if col is None:
+        w = DEV[DEV.mes.isin(MESES_WF)].copy()
+        w["p"] = DummyClassifier(strategy="prior").fit(DEV[F_OF], DEV.carga_alta).predict_proba(w[F_OF])[:, 1]
+        pv = np.full((DEV.conjunto == "validacao").sum(), DEV[DEV.conjunto == "treino"].carga_alta.mean())
+    else:
+        w = wf_score(col); pv = DEV[DEV.conjunto == "validacao"][col].fillna(0).values
+    oofs[nome] = w
+    resultados.append({"modelo": nome, "familia": "baseline", **resumo_wf(w),
+                       "PR-AUC validacao": average_precision_score(DEV[DEV.conjunto == "validacao"].carga_alta, pv)})
+pd.DataFrame(resultados).round(3)
 
 # %% [markdown]
-# ## 4. Baseline: a régua mínima (slides 8 a 11)
+# ## 5. Pipeline e algoritmos (slides 13 a 29, trajetória do Guia §4.3)
 #
-# Três réguas, como pede o Guia de Modelagem (§4.2):
-# - **trivial** (`DummyClassifier`): **maioria** (sempre diz "normal": acurácia alta, recall zero)
-#   e **sorteio** (sorteia "carga alta" na proporção do treino);
-# - **física / regra de volume**: alarme quando o volume estimado do cestão passa de um limiar
-#   escolhido **no treino** (melhor F2, no máximo metade dos cestões em alarme). É o que a
-#   operação poderia fazer hoje, sem ML. A nota sem limiar (PR-AUC) usa o próprio volume como
-#   "chance";
-# - **estatística**: a regressão logística com as features finais (seção 5).
-#
-# Qualquer algoritmo precisa superar as réguas, **na mesma métrica**. A regra do histórico
-# (só `taxa_ca_ult5`), que se mostrou a régua mais dura, é tratada na análise de modelos.
-
-# %% [markdown]
-# ## 5. Pipeline e algoritmos (slides 13 a 29)
-#
-# Todas as features são numéricas, então o `ColumnTransformer` do slide 28 não é necessário:
-# um `Pipeline` basta.
-# - **Preencher vazios** com a mediana do treino (`taxa_ca_ult5/10` não existem nas primeiras
-#   corridas da série).
-# - **Padronizar** só na regressão logística (slide 25: árvores não precisam).
-# - Tudo aprende **só com o treino** de cada prova: nada espia a validação (slide 27).
-#
-# `class_weight="balanced"` dá mais peso à classe rara na logística, na árvore e na Random
-# Forest. O Gradient Boosting do scikit-learn não tem esse parâmetro; como a PR-AUC não depende
-# do limiar e o limiar é ajustado na seção 9, isso não o prejudica na comparação.
-#
-# Hiperparâmetros iniciais "de fábrica", próximos dos slides 19, 23 e 24. São ajustados na
-# seção 7.
+# Todos com as **121 features oficiais**, menos a referência antiga:
+# - **regressão logística** (mediana para vazios + padronização);
+# - **árvore de decisão** (rasa, `max_depth=5`);
+# - **Random Forest** com as 121, e a **RF antiga com 6 features** (plano A, `class_weight="balanced_subsample"`);
+# - **Extra Trees** (florestas com cortes sorteados);
+# - **Gradient Boosting**: um `HistGradientBoostingClassifier` sozinho e a **média de 5** (o oficial).
+#   O HGB lida com vazios sozinho e não precisa de padronização.
 
 # %%
-def montar(modelo, escala=False):
-    passos = [("vazios", SimpleImputer(strategy="median"))]
-    if escala:
-        passos.append(("escala", StandardScaler()))
-    passos.append(("modelo", modelo))
-    return Pipeline(passos)
+def LOGIT():
+    return make_pipeline(SimpleImputer(strategy="median"), StandardScaler(), LogisticRegression(C=0.1, max_iter=5000))
 
-def algoritmos(n_jobs_rf=-1):
-    return {
-        "Baseline: maioria": montar(DummyClassifier(strategy="most_frequent")),
-        "Baseline: sorteio": montar(DummyClassifier(strategy="stratified", random_state=SEED)),
-        "Regressão logística": montar(LogisticRegression(max_iter=2000, class_weight="balanced"), escala=True),
-        "Árvore de decisão": montar(DecisionTreeClassifier(max_depth=4, min_samples_leaf=20,
-                                                           class_weight="balanced", random_state=SEED)),
-        "Random Forest": montar(RandomForestClassifier(n_estimators=300, min_samples_leaf=5,
-                                                       class_weight="balanced_subsample",
-                                                       n_jobs=n_jobs_rf, random_state=SEED)),
-        "Gradient Boosting": montar(GradientBoostingClassifier(learning_rate=0.05, n_estimators=200, max_depth=3,
-                                                               subsample=0.8, random_state=SEED)),
-    }
 
-ALGOS = list(algoritmos())
-ALGOS.insert(2, "Baseline: regra de volume")
-ALGOS_REAIS = [a for a in ALGOS if not a.startswith("Baseline")]
-COMPLEXIDADE = {"Regressão logística": 1, "Árvore de decisão": 2, "Random Forest": 3, "Gradient Boosting": 4}
-COR_ALGO = {"Regressão logística": LARANJA, "Árvore de decisão": VERDE, "Random Forest": AZUL,
-            "Gradient Boosting": VERMELHO, "Baseline: maioria": CINZA, "Baseline: sorteio": CINZA,
-            "Baseline: regra de volume": CINZA}
+def ARVORE():
+    return make_pipeline(SimpleImputer(strategy="median"),
+                         DecisionTreeClassifier(max_depth=5, min_samples_leaf=40, random_state=42))
 
-# %% [markdown]
-# ## 6. Comparação justa: validação cruzada temporal + validação (slide 30)
-#
-# Para cada conjunto de features e cada algoritmo:
-# - **CV**: média e desvio da PR-AUC nas 5 provas temporais dentro do treino;
-# - **validação**: treina no treino inteiro e mede na validação (abr–jun/2026).
-#
-# As duas medidas respondem coisas diferentes. A CV mostra se o algoritmo é estável ao longo do
-# treino; a validação mostra se ele aguenta o período mais recente, que já é o regime pós-maio
-# (ver README da feature selection).
 
-# %%
-def avaliar(pipe, cols):
-    cv = cross_validate(pipe, treino[cols], y_tr, cv=CV,
-                        scoring={"PR-AUC": "average_precision", "ROC-AUC": "roc_auc"})
-    p = pipe.fit(treino[cols], y_tr).predict_proba(valid[cols])[:, 1]
-    return {"CV_PR-AUC": cv["test_PR-AUC"].mean(), "CV_PR-AUC_dp": cv["test_PR-AUC"].std(),
-            "CV_ROC-AUC": cv["test_ROC-AUC"].mean(),
-            "val_PR-AUC": average_precision_score(y_va, p), "val_ROC-AUC": roc_auc_score(y_va, p),
-            "PR-AUC_por_prova": list(np.round(cv["test_PR-AUC"], 4))}
+def RF121():
+    return make_pipeline(SimpleImputer(strategy="median"),
+                         RandomForestClassifier(n_estimators=500, min_samples_leaf=5, random_state=42, n_jobs=-1))
 
-linhas, de_fabrica = [], {}
-for nome_conj, cols in CONJUNTOS.items():
-    for nome_alg, pipe in algoritmos().items():
-        linhas.append({"conjunto": nome_conj, "algoritmo": nome_alg, "n_features": len(cols),
-                       **avaliar(pipe, cols)})
-        de_fabrica[(nome_conj, nome_alg)] = pipe      # avaliar() deixa o pipe treinado no treino inteiro
-tab_fabrica = pd.DataFrame(linhas)
 
-# Baseline físico (Guia de Modelagem §4.2): alarme se volume_m3_total > limiar escolhido no treino
-COL_VOL = "volume_m3_total"
-def limiar_regra(score, y, beta=2.0, alarmes_max=0.5):
-    """Limiar de uma regra 'alarme se score > limiar': melhor F-beta, com no máximo metade em alarme."""
-    cand_l = np.unique(np.quantile(score, np.linspace(0.5, 0.99, 50)))
-    f = [fbeta_score(y, score > l, beta=beta, zero_division=0) if (score > l).mean() <= alarmes_max else -1
-         for l in cand_l]
-    return float(cand_l[int(np.argmax(f))])
-cv_vol = [average_precision_score(treino.loc[b, "carga_alta"], treino.loc[b, COL_VOL]) for _, b in CV]
-cv_vol_roc = [roc_auc_score(treino.loc[b, "carga_alta"], treino.loc[b, COL_VOL]) for _, b in CV]
-LIM_VOL = limiar_regra(treino[COL_VOL].to_numpy(), y_tr.to_numpy())
-regra_vol = {"algoritmo": "Baseline: regra de volume", "n_features": 1,
-             "CV_PR-AUC": np.mean(cv_vol), "CV_PR-AUC_dp": np.std(cv_vol), "CV_ROC-AUC": np.mean(cv_vol_roc),
-             "val_PR-AUC": average_precision_score(y_va, valid[COL_VOL]),
-             "val_ROC-AUC": roc_auc_score(y_va, valid[COL_VOL]), "PR-AUC_por_prova": list(np.round(cv_vol, 4))}
-tab_fabrica = pd.concat([tab_fabrica, pd.DataFrame([{"conjunto": c, **regra_vol} for c in CONJUNTOS])],
-                        ignore_index=True)
-alarme_vol_va = valid[COL_VOL] > LIM_VOL
-print(f"Regra de volume: alarme se volume > {LIM_VOL:.1f} m³ (escolhido no treino). Na validação: "
-      f"{100 * alarme_vol_va.mean():.0f} alarmes por 100 cestões, recall {recall_score(y_va, alarme_vol_va):.2f}, "
-      f"precisão {precision_score(y_va, alarme_vol_va, zero_division=0):.2f}")
-print(f"Referência de chute: PR-AUC = taxa de carga alta (treino {y_tr.mean():.3f}, validação {y_va.mean():.3f})")
-tab_fabrica.drop(columns="PR-AUC_por_prova").round(3)
+def ET121():
+    return make_pipeline(SimpleImputer(strategy="median"),
+                         ExtraTreesClassifier(n_estimators=500, min_samples_leaf=5, random_state=42, n_jobs=-1))
 
-# %%
-# Gráfico 01: todos os algoritmos x baseline, no conjunto final (CV e validação)
-d = tab_fabrica[tab_fabrica.conjunto == NOME_FINAL].set_index("algoritmo").loc[ALGOS[::-1]]
-fig, ax = plt.subplots(figsize=(9, 4.2))
-ypos = np.arange(len(d))
-ax.errorbar(d["CV_PR-AUC"], ypos + 0.12, xerr=d["CV_PR-AUC_dp"], fmt="o", ms=8, color=AZUL,
-            ecolor=AZUL, elinewidth=1.5, capsize=0, label="validação cruzada temporal (média ± desvio, 5 provas)")
-ax.plot(d["val_PR-AUC"], ypos - 0.12, "D", ms=8, color=LARANJA, label="validação (abr–jun/2026)")
-for y, v in zip(ypos, d["val_PR-AUC"]):
-    ax.annotate(f"{v:.2f}", (v, y - 0.12), xytext=(8, -4), textcoords="offset points", fontsize=8, color="#333")
-ax.axvline(y_va.mean(), color=CINZA, ls=":", lw=1.2)
-ax.annotate("chute (taxa de carga alta)", (y_va.mean(), -0.55), xytext=(4, 0), textcoords="offset points",
-            fontsize=8, color=CINZA, va="center")
-ax.set_yticks(ypos, d.index)
-ax.set_xlabel("PR-AUC (maior é melhor)")
-ax.set_xlim(0, max(0.6, d[["CV_PR-AUC", "val_PR-AUC"]].max().max() + 0.08))
-melhor_val = d.drop(index=[a for a in d.index if a.startswith("Baseline")])["val_PR-AUC"]
-ax.set_title(f"Todos os algoritmos superam o chute; na validação, a {melhor_val.idxmax()} lidera\n"
-             f"PR-AUC por algoritmo, conjunto final de {len(FEAT_FINAL)} features, hiperparâmetros de fábrica",
-             loc="left", fontsize=11)
-ax.set_ylim(-0.8, len(d) - 0.5)
-ax.legend(fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=2, frameon=False)
-ax.grid(axis="y", visible=False)
-salvar("01_baseline_vs_algoritmos")
 
-# %%
-# Gráfico 02: PR-AUC prova a prova (a CV temporal anda no tempo)
-fig, ax = plt.subplots(figsize=(9, 4))
-for alg in ALGOS_REAIS:
-    v = d.loc[alg, "PR-AUC_por_prova"]
-    ax.plot(range(1, 6), v, marker="o", ms=6, lw=2, color=COR_ALGO[alg], label=alg)
-taxa_prova = [treino.loc[b, "carga_alta"].mean() for _, b in CV]
-ax.plot(range(1, 6), taxa_prova, ls=":", color=CINZA, lw=1.5, label="chute (taxa de carga alta da prova)")
-ax.set_xticks(range(1, 6), [f"prova {i}\n{p}" for i, p in enumerate(periodo_dobra, 1)], fontsize=8)
-ax.set_ylabel("PR-AUC")
-ax.set_ylim(0, 0.9)
-ax.set_title("O desempenho varia de prova para prova: uma prova só poderia enganar (slide 30)\n"
-             "PR-AUC de cada algoritmo em cada prova da validação cruzada temporal, conjunto final",
-             loc="left", fontsize=11)
-ax.legend(fontsize=8, frameon=False, ncol=2)
-salvar("02_pr_auc_por_prova")
-
-# %% [markdown]
-# ## 7. Ajuste de hiperparâmetros (slide 24)
-#
-# Os "botões do forno" de cada algoritmo, escolhidos com `GridSearchCV` **usando as mesmas 5
-# provas temporais** e PR-AUC como nota. O teste não participa (slide 35). Grades pequenas: com
-# ~2.500 cestões no treino, grade grande é convite a decorar a validação cruzada.
-#
-# | Algoritmo | Botões testados |
-# |---|---|
-# | Logística | `C` (força da regularização: menor = coeficientes mais contidos) |
-# | Árvore | `max_depth` (nº de perguntas), `min_samples_leaf` |
-# | Random Forest | `max_depth`, `min_samples_leaf`, `max_features` |
-# | Gradient Boosting | `learning_rate`, `n_estimators`, `max_depth` |
-
-# %%
-GRADES = {
-    "Regressão logística": {"modelo__C": [0.01, 0.03, 0.1, 0.3, 1, 3, 10]},
-    "Árvore de decisão": {"modelo__max_depth": [2, 3, 4, 5, 6, 8], "modelo__min_samples_leaf": [10, 30, 60]},
-    "Random Forest": {"modelo__max_depth": [4, 8, None], "modelo__min_samples_leaf": [5, 20, 50],
-                      "modelo__max_features": ["sqrt", 0.5]},
-    "Gradient Boosting": {"modelo__learning_rate": [0.03, 0.1], "modelo__n_estimators": [100, 300],
-                          "modelo__max_depth": [2, 3]},
+ALGORITMOS = {
+    "Regressão logística (121)": ("linear", [(LOGIT, F_OF)]),
+    "Árvore de decisão rasa (121)": ("árvore", [(ARVORE, F_OF)]),
+    "Random Forest (121)": ("floresta", [(RF121, F_OF)]),
+    NOME_RF6: ("floresta", [(RF6, FINAL6)]),
+    "Extra Trees (121)": ("floresta", [(ET121, F_OF)]),
+    "Gradient Boosting, 1 modelo (121)": ("boosting", [(HGB(**VARIANTES["l2=5"]), F_OF)]),
+    NOME_OFICIAL: ("boosting", familia(F_OF)),
+    NOME_RESERVA: ("boosting", familia(F_PRINC)),
+    "5 HGB, histórico sem a corrida anterior (lag2)": ("boosting", familia(F_LAG2)),
 }
-ajustados, linhas = {}, []
-for nome_conj, cols in CONJUNTOS.items():
-    for alg in ALGOS_REAIS:
-        busca = GridSearchCV(algoritmos(n_jobs_rf=1)[alg], GRADES[alg], cv=CV, scoring="average_precision",
-                             n_jobs=-1).fit(treino[cols], y_tr)
-        melhor = busca.best_estimator_      # já re-treinado no treino inteiro
-        ajustados[(nome_conj, alg)] = melhor
-        p = melhor.predict_proba(valid[cols])[:, 1]
-        i = busca.best_index_
-        linhas.append({"conjunto": nome_conj, "algoritmo": alg, "n_features": len(cols),
-                       "complexidade": COMPLEXIDADE[alg],
-                       "hiperparametros": {k.replace("modelo__", ""): v for k, v in busca.best_params_.items()},
-                       "CV_PR-AUC": busca.best_score_,
-                       "CV_PR-AUC_dp": busca.cv_results_["std_test_score"][i],
-                       "val_PR-AUC": average_precision_score(y_va, p), "val_ROC-AUC": roc_auc_score(y_va, p)})
-tab_ajuste = pd.DataFrame(linhas)
-fab = tab_fabrica.set_index(["conjunto", "algoritmo"])["val_PR-AUC"]
-tab_ajuste["ganho_val_vs_fabrica"] = [r["val_PR-AUC"] - fab[(r["conjunto"], r["algoritmo"])]
-                                      for _, r in tab_ajuste.iterrows()]
-tab_ajuste.round(3)
 
 # %% [markdown]
-# ### O que funcionava antes de maio não é o que funciona depois
+# ## 6. Comparação justa: walk-forward mensal no dev (slide 30)
 #
-# Comparando a nota na CV temporal (treino, ago/2025–abr/2026) com a nota na validação
-# (abr–jun/2026):
-# - a **regressão logística** é a melhor na CV e a pior na validação;
-# - o **ajuste de hiperparâmetros**, feito na CV, quase nunca melhora a validação, e na Random
-#   Forest com as features finais piora bastante.
-#
-# As duas coisas têm a mesma causa: o treino é todo do regime antigo (antes de maio/2026, com
-# mais material pesado e mais ciclos), e a CV dentro dele só sabe premiar o que funciona nesse
-# regime. Por isso:
-# - a versão **de fábrica** de cada algoritmo continua candidata na seção 8 (ela também é uma
-#   escolha de hiperparâmetros feita antes de ver os dados, e no slide 22 a Random Forest
-#   "funciona bem de fábrica");
-# - a **validação** decide entre os candidatos, porque é o período mais parecido com o uso real.
+# Cada algoritmo treina 8 vezes (uma por mês). Para cada um: PR-AUC no walk-forward, minutos perdidos
+# de jan a jun/26 (limiar de cada mês vindo dos meses anteriores), economia contra "sem modelo" e a
+# PR-AUC na prova de sempre (treino → validação).
 
 # %%
-# Gráfico 03: CV x validação (plano A, fábrica e ajustados)
-fig, ax = plt.subplots(figsize=(8.5, 5))
-for etapa, tab, marcador in [("de fábrica", tab_fabrica, "o"), ("ajustado na CV", tab_ajuste, "D")]:
-    t = tab[tab.conjunto.isin([NOME_FINAL, NOME_CONS]) & tab.algoritmo.isin(ALGOS_REAIS)]
-    for _, r in t.iterrows():
-        cheio = r["conjunto"] == NOME_FINAL
-        ax.scatter(r["CV_PR-AUC"], r["val_PR-AUC"], s=70, marker=marcador, zorder=3, linewidth=1.8,
-                   facecolor=COR_ALGO[r["algoritmo"]] if cheio else "white",
-                   edgecolor="white" if cheio else COR_ALGO[r["algoritmo"]])
-lim_ax = [0.15, 0.5]
-ax.plot(lim_ax, lim_ax, color=CINZA, lw=1, ls="--")
-ax.annotate("diagonal: mesma nota no passado e no presente", (0.47, 0.47), xytext=(0, -14), textcoords="offset points",
-            fontsize=8, color=CINZA, ha="right")
-lr = tab_fabrica[(tab_fabrica.conjunto == NOME_FINAL) & (tab_fabrica.algoritmo == "Regressão logística")].iloc[0]
-ax.annotate("logística: melhor na CV,\npior na validação", (lr["CV_PR-AUC"], lr["val_PR-AUC"]),
-            xytext=(-10, -38), textcoords="offset points", fontsize=8, ha="right", color="#333",
-            arrowprops=dict(arrowstyle="-", color="#999", lw=0.8))
-from matplotlib.lines import Line2D
-leg = [Line2D([], [], marker="o", ls="", color=COR_ALGO[a], label=a) for a in ALGOS_REAIS]
-leg += [Line2D([], [], marker="o", ls="", color="#555", label="círculo: de fábrica"),
-        Line2D([], [], marker="D", ls="", color="#555", label="losango: ajustado na CV"),
-        Line2D([], [], marker="o", ls="", markerfacecolor="#555", markeredgecolor="#555", label=f"cheio: {NOME_FINAL}"),
-        Line2D([], [], marker="o", ls="", markerfacecolor="white", markeredgecolor="#555", label=f"vazio: {NOME_CONS}")]
-ax.legend(handles=leg, fontsize=8, frameon=False, loc="upper left")
-ax.set_xlim(*lim_ax); ax.set_ylim(*lim_ax)
-ax.set_xlabel("PR-AUC na validação cruzada temporal (treino: ago/2025–abr/2026)")
-ax.set_ylabel("PR-AUC na validação (abr–jun/2026)")
-ax.set_title("Quem vai bem no passado não é quem vai bem no presente\n"
-             "Cada ponto é um modelo; abaixo da diagonal, ele piorou depois da mudança de maio/2026",
-             loc="left", fontsize=11)
-salvar("03_cv_vs_validacao")
+VAL = DEV[DEV.conjunto == "validacao"]
+for nome, (fam, membros) in ALGORITMOS.items():
+    w = oof_dev(membros, DEV); oofs[nome] = w
+    pv = prever(membros, DEV[DEV.conjunto == "treino"], VAL)
+    resultados.append({"modelo": nome, "familia": fam, **resumo_wf(w),
+                       "PR-AUC validacao": average_precision_score(VAL.carga_alta, pv)})
+    r = resultados[-1]
+    print(f"{nome:50s} WF PR-AUC {r['PR-AUC WF']:.3f} | {r['min WF jan-jun']:.0f} min | val {r['PR-AUC validacao']:.3f}")
+comp = pd.DataFrame(resultados).set_index("modelo")
+comp["sem modelo jan-jun"] = SEM_DEV
+comp.to_csv(PASTA / "comparacao_algoritmos.csv")
+comp.round(3)
+
+# %%
+o = comp.sort_values("min WF jan-jun", ascending=False)
+cores = [AZUL if i == NOME_OFICIAL else (LARANJA if i == NOME_RF6 else CINZA) for i in o.index]
+fig, axes = plt.subplots(1, 2, figsize=(13, 5.4), sharey=True)
+axes[0].barh(o.index, o["min WF jan-jun"], color=cores)
+axes[0].axvline(SEM_DEV, ls="--", color=CINZA); axes[0].text(SEM_DEV, -0.9, f"sem modelo: {SEM_DEV:.0f}", ha="right", fontsize=8)
+for i, v in enumerate(o["min WF jan-jun"]):
+    axes[0].text(v + 5, i, f"{v:.0f}", va="center", fontsize=8)
+axes[0].set_xlabel("minutos perdidos, jan–jun/26 (menor é melhor)")
+axes[0].set_title("Minutos perdidos no walk-forward (dev)", loc="left")
+axes[1].barh(o.index, o["PR-AUC WF"], color=cores)
+for i, v in enumerate(o["PR-AUC WF"]):
+    axes[1].text(v + 0.005, i, f"{v:.3f}", va="center", fontsize=8)
+axes[1].set_xlabel("PR-AUC no walk-forward (maior é melhor)")
+axes[1].set_title("PR-AUC no walk-forward (dev)", loc="left")
+fig.suptitle("Azul: oficial (5 Gradient Boosting + cestão 1). Laranja: RF 6 features (antigo plano A).", x=0.01, ha="left",
+             fontsize=9, color="#52514e")
+plt.tight_layout(); plt.savefig(PASTA / "graficos/01_algoritmos_minutos_e_prauc.png", dpi=130, bbox_inches="tight"); plt.show()
 
 # %% [markdown]
-# ## 7b. Desbalanceamento: pesos × sem peso × subamostragem (Guia de Modelagem §4.4)
+# ## 7. Hiperparâmetros: por que a média de 5 (slide 24)
 #
-# Só ~16% dos cestões têm carga alta. O Guia lista as opções; aqui elas são comparadas na Random
-# Forest de fábrica com as features finais, nas mesmas provas temporais e na validação:
-# - **sem peso**: o algoritmo puro;
-# - **pesos de classe** (`balanced_subsample`), a opção usada no projeto;
-# - **subamostragem** da classe "normal" até 1:1, feita **só dentro do treino de cada prova**
-#   (nunca na validação, que tem de manter a proporção real de eventos).
-#
-# Não usamos SMOTE: ele cria cestões sintéticos interpolando outros, o que pode gerar receitas
-# fisicamente impossíveis (Guia §4.4), e a PR-AUC não depende do limiar, que é ajustado à parte na
-# seção 9. Esta comparação **não muda a escolha** da seção 8; ela documenta a estratégia.
+# Na otimização foram testadas 168 configurações (`otimizacao_minutos/experimentos/`). A família
+# "Gradient Boosting com todas as features" deu os menores minutos em **todas** as variações de
+# hiperparâmetro. Escolher a melhor delas seria otimista (o melhor de muitos testes tende a ter
+# sorte). Por isso o oficial é a **média de 5 variações próximas** (`learning_rate` 0,03–0,05,
+# 8–16 folhas, `min_samples_leaf` 20–40, `l2_regularization=5`): o resultado depende menos de um
+# ajuste específico. Abaixo, cada variação sozinha e a média.
 
 # %%
-def rf_desbal(peso):
-    return montar(RandomForestClassifier(n_estimators=300, min_samples_leaf=5, class_weight=peso,
-                                         n_jobs=-1, random_state=SEED))
+var = []
+for k, kw in VARIANTES.items():
+    w = oof_dev([(HGB(**kw), F_OF)], DEV)
+    var.append({"variante": k, **{f"{a}": b for a, b in kw.items()}, **resumo_wf(w)})
+var.append({"variante": "MÉDIA DAS 5 (oficial)", **resumo_wf(oofs[NOME_OFICIAL])})
+var = pd.DataFrame(var).set_index("variante")
+var.to_csv(PASTA / "variantes_hgb.csv")
+print(var[["PR-AUC WF", "min WF jan-jun", "economia WF %"]].round(3).to_string())
 
-def subamostrar(X, y, seed=SEED):
-    rng_s = np.random.default_rng(seed)
-    pos, neg = np.where(y == 1)[0], np.where(y == 0)[0]
-    keep = np.concatenate([pos, rng_s.choice(neg, size=len(pos), replace=False)])
-    return X.iloc[keep], y.iloc[keep]
-
-def nota_desbal(estrategia):
-    notas = []
-    for a, b in CV + [(np.arange(len(treino)), None)]:
-        Xa, ya = treino.iloc[a][FEAT_FINAL], y_tr.iloc[a]
-        if estrategia == "subamostragem 1:1 (no treino)":
-            Xa, ya = subamostrar(Xa, ya)
-        m = rf_desbal("balanced_subsample" if estrategia.startswith("pesos") else None).fit(Xa, ya)
-        if b is None:
-            p = m.predict_proba(valid[FEAT_FINAL])[:, 1]
-            return {"estrategia": estrategia, "CV_PR-AUC": np.mean(notas), "CV_PR-AUC_dp": np.std(notas),
-                    "val_PR-AUC": average_precision_score(y_va, p), "val_ROC-AUC": roc_auc_score(y_va, p),
-                    "chance_media_val": p.mean(), "taxa_real_val": y_va.mean()}
-        notas.append(average_precision_score(treino.iloc[b]["carga_alta"], m.predict_proba(treino.iloc[b][FEAT_FINAL])[:, 1]))
-
-tab_desbal = pd.DataFrame([nota_desbal(e) for e in ["sem peso", "pesos de classe (balanced_subsample)",
-                                                     "subamostragem 1:1 (no treino)"]]).set_index("estrategia")
-tab_desbal.round(3)
+fig, ax = plt.subplots(figsize=(7.5, 3.6))
+ax.scatter(var["PR-AUC WF"][:-1], var["min WF jan-jun"][:-1], color=CINZA, s=40, label="uma variante")
+ax.scatter(var["PR-AUC WF"][-1:], var["min WF jan-jun"][-1:], color=AZUL, s=90, marker="D", label="média das 5 (oficial)")
+for k, r in var.iloc[:-1].iterrows():
+    ax.annotate(k, (r["PR-AUC WF"], r["min WF jan-jun"]), fontsize=8, xytext=(4, 3), textcoords="offset points")
+ax.axhline(comp.loc[NOME_RF6, "min WF jan-jun"], color=LARANJA, ls="--", lw=1, label="RF 6 features (antigo)")
+ax.set_xlabel("PR-AUC no walk-forward"); ax.set_ylabel("minutos perdidos jan–jun")
+ax.set_title("As 5 variações de hiperparâmetro e a média", loc="left"); ax.legend(fontsize=8)
+plt.tight_layout(); plt.savefig(PASTA / "graficos/02_variantes_hgb.png", dpi=130, bbox_inches="tight"); plt.show()
 
 # %% [markdown]
-# ## 8. A escada: subir de complexidade só se valer a pena (slide 33)
+# ## 7b. Desbalanceamento: pesos de classe × sem peso (Guia de Modelagem §4.4)
 #
-# **Regra:**
-# 1. Candidatos: cada algoritmo **de fábrica e ajustado**, nos conjuntos **final (6)** e
-#    **consenso (18)**. O conjunto sem histórico é o plano B (ver abaixo).
-# 2. Nota: PR-AUC na **validação**.
-# 3. Fica o **mais simples** (degrau mais baixo da escada; depois, menos features) cuja nota está
-#    a **no máximo 0,02** da melhor. "Se a logística quase empata com o boosting, a logística pode
-#    ser a melhor escolha" (slide 33).
-#
-# **Quão grande é uma diferença de 0,02?** A validação tem só ~90 cestões com carga alta. O
-# intervalo de 90% da PR-AUC (bootstrap por corrida) mostra quanto ela oscilaria com outra amostra
-# do mesmo período: diferenças menores que essa oscilação são empate.
-#
-# **Plano B (sem histórico):** as features `taxa_ca_ult5/10` usam o resultado das corridas
-# anteriores. Se a EVCOMX disser que esse resultado não está disponível na hora de prever, o
-# modelo não pode usá-las. Aplicamos a mesma regra ao conjunto sem histórico, para já termos o
-# substituto pronto.
+# Só ~17% dos cestões têm carga alta. A RF antiga usava `class_weight="balanced_subsample"`, e por
+# isso as chances saíam infladas (a análise precisava calibrar). O oficial **não usa pesos**:
 
 # %%
-TOL = 0.02
-modelos = {**{(c, a, "fábrica"): m for (c, a), m in de_fabrica.items() if a in ALGOS_REAIS},
-           **{(c, a, "ajustado"): m for (c, a), m in ajustados.items()}}
-cand = pd.concat([
-    tab_fabrica[tab_fabrica.algoritmo.isin(ALGOS_REAIS)].drop(columns="PR-AUC_por_prova")
-        .assign(versao="fábrica", hiperparametros="fábrica"),
-    tab_ajuste.drop(columns="ganho_val_vs_fabrica").assign(versao="ajustado")], ignore_index=True)
-cand["complexidade"] = cand["algoritmo"].map(COMPLEXIDADE)
-
-# bootstrap por corrida na validação
-rng = np.random.default_rng(SEED)
-corridas_va = valid["cd_corrida"].unique()
-idx_corrida = valid.groupby("cd_corrida").indices
-amostras = [np.concatenate([idx_corrida[c] for c in rng.choice(corridas_va, len(corridas_va))]) for _ in range(500)]
-def ic90(p):
-    v = [average_precision_score(y_va.values[a], p[a]) for a in amostras]
-    return round(float(np.percentile(v, 5)), 3), round(float(np.percentile(v, 95)), 3)
-p_val = {k: m.predict_proba(valid[CONJUNTOS[k[0]]])[:, 1] for k, m in modelos.items()}
-ics = {k: ic90(p) for k, p in p_val.items()}
-cand["val_IC90"] = [ics[(r.conjunto, r.algoritmo, r.versao)] for r in cand.itertuples()]
-
-def subir_escada(tab):
-    teto = tab["val_PR-AUC"].max()
-    ok = tab[tab["val_PR-AUC"] >= teto - TOL]
-    return ok.sort_values(["complexidade", "n_features", "val_PR-AUC"], ascending=[True, True, False]).iloc[0], teto
-
-esc_A, teto_A = subir_escada(cand[cand.conjunto.isin([NOME_FINAL, NOME_CONS])])
-esc_B, teto_B = subir_escada(cand[cand.conjunto == NOME_SEMH])
-for rot, esc, teto in [("PLANO A (com histórico)", esc_A, teto_A), ("PLANO B (sem histórico)", esc_B, teto_B)]:
-    print(f"{rot}: {esc['algoritmo']} {esc['versao']} | {esc['conjunto']} | {esc['hiperparametros']}")
-    print(f"   PR-AUC validação {esc['val_PR-AUC']:.3f}, IC90 {esc['val_IC90']} (melhor do grupo: {teto:.3f}) | "
-          f"CV {esc['CV_PR-AUC']:.3f} ± {esc['CV_PR-AUC_dp']:.3f}")
-cand.sort_values("val_PR-AUC", ascending=False)[
-    ["conjunto", "algoritmo", "versao", "hiperparametros", "CV_PR-AUC", "val_PR-AUC", "val_IC90"]].round(3)
-
-# %%
-# Gráfico 04: a escada, no plano A (melhor versão de cada degrau, com IC90)
-fig, ax = plt.subplots(figsize=(9, 4.4))
-for nome_conj, marcador, desl, cor in [(NOME_FINAL, "o", -0.1, AZUL), (NOME_CONS, "s", 0.1, CINZA)]:
-    t = cand[cand.conjunto == nome_conj].sort_values("val_PR-AUC").groupby("algoritmo").tail(1).sort_values("complexidade")
-    x = t["complexidade"] + desl
-    lo = t["val_PR-AUC"] - t["val_IC90"].str[0]
-    hi = t["val_IC90"].str[1] - t["val_PR-AUC"]
-    ax.errorbar(x, t["val_PR-AUC"], yerr=[lo, hi], fmt=marcador + "-", ms=8, lw=1.5, color=cor,
-                elinewidth=1, alpha=0.9, label=f"conjunto {nome_conj} (melhor versão; barra = IC 90%)")
-ax.axhspan(teto_A - TOL, teto_A, color=VERDE, alpha=0.12)
-ax.annotate(f"faixa de empate: até {TOL:.2f} abaixo da melhor".replace(".", ","), (0.58, teto_A + 0.012), fontsize=8, color=VERDE)
-x_esc = esc_A["complexidade"] + (-0.1 if esc_A["conjunto"] == NOME_FINAL else 0.1)
-ax.annotate(f"escolhido\n({esc_A['versao']})", (x_esc, esc_A["val_PR-AUC"]), xytext=(-48, 26),
-            textcoords="offset points", ha="center", fontsize=9, fontweight="bold", color=VERMELHO,
-            arrowprops=dict(arrowstyle="-", color=VERMELHO, lw=1))
-ax.axhline(y_va.mean(), color=CINZA, ls=":", lw=1.2)
-ax.annotate("chute", (4.35, y_va.mean()), xytext=(0, 4), textcoords="offset points", fontsize=8, color=CINZA)
-ax.set_xticks([1, 2, 3, 4], ["1. Logística", "2. Árvore", "3. Random Forest", "4. Gradient Boosting"])
-ax.set_xlim(0.5, 4.6)
-ax.set_ylim(0, 0.65)
-ax.set_ylabel("PR-AUC na validação")
-ax.set_title(f"O degrau 3 basta: {esc_A['algoritmo']} com {esc_A['n_features']} features empata com o boosting\n"
-             "PR-AUC na validação de cada degrau da escada (slide 33)", loc="left", fontsize=11)
-ax.legend(fontsize=8, frameon=False, loc="lower left")
-ax.grid(axis="x", visible=False)
-salvar("04_escada_de_complexidade")
+desb = []
+for nome, cw in [("sem peso (oficial)", None), ("pesos de classe (balanced)", "balanced")]:
+    membros = [((lambda kw=kw, cw=cw: HGB(**kw)().set_params(class_weight=cw)), F_OF) for kw in VARIANTES.values()]
+    w = oofs[NOME_OFICIAL] if cw is None else oof_dev(membros, DEV)
+    desb.append({"estrategia": nome, **resumo_wf(w), "chance media WF": w.p.mean(), "taxa real WF": w.carga_alta.mean()})
+desb = pd.DataFrame(desb).set_index("estrategia")
+desb.to_csv(PASTA / "desbalanceamento.csv")
+desb.round(3)
 
 # %% [markdown]
-# ## 9. O limiar de decisão (slide 16)
+# - **Na ordem dos cestões (PR-AUC), as duas estratégias ficam próximas.**
+# - **A diferença está na escala da chance.** Sem peso, a chance média fica perto da taxa real, e o
+#   limiar escolhido no passado continua valendo no modelo re-treinado. Com peso, a chance infla.
+# - Não usamos SMOTE: ele cria cestões sintéticos que podem ser receitas impossíveis (Guia §4.4).
 #
-# O modelo devolve uma **chance** de carga alta; o limiar transforma a chance em alarme. O padrão
-# de 50% não serve com classe rara. O limiar é escolhido **na validação**, com o modelo treinado
-# só no treino, e depende da resposta da EVCOMX à pergunta 3 do e-mail:
+# ## 8. A escada e a regra de escolha (slide 33)
 #
-# | Se a EVCOMX disser que… | Critério | Limiar |
-# |---|---|---|
-# | carga alta não detectada é pior | F2 (recall pesa 2× a precisão) | **"não deixar passar"** |
-# | os dois erros pesam igual | F1 | **"equilíbrio"** |
-# | alarme falso é pior | F0,5 (precisão pesa 2×) | **"evitar alarme falso"** |
+# **Regra 1, declarada antes de abrir o teste** (`otimizacao_minutos/finalistas_dev_pre_registro.csv`):
+# entre os **finalistas** registrados, fica o de **menos minutos no walk-forward**, desde que a PR-AUC
+# no walk-forward seja pelo menos a da RF do grupo. O resultado do cestão 1 entrou com a condição
+# "se a EVCOMX confirmar o timing", e a EVCOMX confirmou (31/out/2026).
 #
-# Restrição: o limiar não pode disparar alarme em **mais da metade dos cestões** da validação.
-# Sem ela, com um modelo fraco o F2 escolhe "alarme em tudo" (recall 100%, nenhuma utilidade).
-# O valor de 50% é uma suposição nossa, para confirmar com a EVCOMX junto com a pergunta 3.
-#
-# Para a operação, traduzimos cada limiar em **alarmes a cada 100 cestões**.
+# **Regra 2, a escada (slide 33):** um degrau mais simples (linear < árvore < floresta < boosting)
+# toma o lugar do escolhido se **empatar nas duas réguas** dentro do ruído: minutos a até 30 min
+# **e** PR-AUC no walk-forward a até 0,02. As faixas de ruído vêm das 5 variantes de hiperparâmetro,
+# que sozinhas espalham ~575–645 min e ±0,02 de PR-AUC (seção 7). "1 HGB" e "5 HGB" são o mesmo
+# degrau: a média existe para não escolher a variante de mais sorte.
 
 # %%
-CENARIOS = {"não deixar passar (F2)": 2.0, "equilíbrio (F1)": 1.0, "evitar alarme falso (F0,5)": 0.5}
+PRE_REGISTRO = [NOME_OFICIAL, NOME_RESERVA, "5 HGB, histórico sem a corrida anterior (lag2)", NOME_RF6]
+fin = comp.loc[PRE_REGISTRO]
+fin = fin[fin["PR-AUC WF"] >= comp.loc[NOME_RF6, "PR-AUC WF"]]
+escolhido = fin["min WF jan-jun"].idxmin()
+print("Regra 1 (finalistas pré-registrados):")
+print(fin[["PR-AUC WF", "min WF jan-jun", "economia WF %"]].sort_values("min WF jan-jun").round(3).to_string())
+print("→ escolhido:", escolhido)
+assert escolhido == NOME_OFICIAL, "a regra declarada não aponta mais para o modelo oficial: revise antes de seguir"
 
-ALARMES_MAX = 0.5   # um "modelo" que dispara em mais da metade dos cestões não ajuda a operação
+DEGRAU = {"linear": 1, "árvore": 2, "floresta": 3, "boosting": 4}
+ref = comp.loc[escolhido]
+escada = comp[comp.familia != "baseline"].copy()
+escada["degrau"] = escada.familia.map(DEGRAU)
+escada["Δ min"] = escada["min WF jan-jun"] - ref["min WF jan-jun"]
+escada["Δ PR-AUC WF"] = escada["PR-AUC WF"] - ref["PR-AUC WF"]
+escada["empata nos minutos (±30)"] = escada["Δ min"].abs() <= 30
+escada["empata na PR-AUC (±0,02)"] = escada["Δ PR-AUC WF"] >= -0.02
+escada["toma o lugar?"] = (escada.degrau < DEGRAU["boosting"]) & escada["empata nos minutos (±30)"] & escada["empata na PR-AUC (±0,02)"]
+escada.to_csv(PASTA / "escada_de_complexidade.csv")
+print("\nRegra 2 (escada):")
+print(escada[["familia", "min WF jan-jun", "Δ min", "PR-AUC WF", "Δ PR-AUC WF", "PR-AUC validacao", "toma o lugar?"]]
+      .sort_values("min WF jan-jun").round(3).to_string())
+assert not escada["toma o lugar?"].any(), "um modelo mais simples empata nas duas réguas: revise a escolha"
 
-def escolher_limiares(y, p):
-    prec, rec, lims = precision_recall_curve(y, p)
-    prec, rec = prec[:-1], rec[:-1]
-    taxa_alarme = np.array([(p >= l).mean() for l in lims])
-    out = {}
-    for nome, beta in CENARIOS.items():
-        f = (1 + beta**2) * prec * rec / np.clip(beta**2 * prec + rec, 1e-12, None)
-        f[taxa_alarme > ALARMES_MAX] = -1
-        out[nome] = float(lims[np.argmax(f)])
-    return out
-
-def medir(y, p, lim):
-    prev = p >= lim
-    vp = int((prev & (y == 1)).sum())
-    return {"limiar": lim, "acuracia": accuracy_score(y, prev), "recall": recall_score(y, prev),
-            "precisao": precision_score(y, prev, zero_division=0), "F1": f1_score(y, prev),
-            "alarmes_por_100": 100 * prev.mean(), "acertos_por_100": 100 * vp / len(y),
-            "cargas_altas_por_100": 100 * y.mean()}
-
-def preparar(esc):
-    cols = CONJUNTOS[esc["conjunto"]]
-    modelo = modelos[(esc["conjunto"], esc["algoritmo"], esc["versao"])]
-    return modelo, cols, modelo.predict_proba(valid[cols])[:, 1]
-
-modelo_A, cols_A, p_va_A = preparar(esc_A)
-modelo_B, cols_B, p_va_B = preparar(esc_B)
-lim_A, lim_B = escolher_limiares(y_va, p_va_A), escolher_limiares(y_va, p_va_B)
-tab_limiar = pd.DataFrame([{"plano": plano, "cenario": c, **medir(y_va, p, lims[c])}
-                           for plano, p, lims in [("A", p_va_A, lim_A), ("B", p_va_B, lim_B)]
-                           for c in CENARIOS])
-tab_limiar.round(3)
+# %% [markdown]
+# **Leitura da escada.**
+# - **A regressão logística empata nos minutos** (a diferença está dentro do ruído), **mas perde na
+#   ordem dos cestões**: PR-AUC 0,46 contra 0,50 no walk-forward e 0,35 contra 0,45 na validação.
+#   Com o limiar de ~0,18, as duas acertam parecido "na média"; a logística erra mais quando o
+#   orçamento de alarmes aperta (análise, seção 7). Ela não toma o lugar, mas é a **alternativa
+#   simples** a reavaliar quando houver um lote novo de dados. Ela não é medida no teste: não era
+#   finalista, e o teste não serve para escolher.
+# - A árvore rasa e as florestas ficam bem atrás nos minutos.
+# - O degrau "1 HGB → média de 5" quase não muda a média; ele existe para **não depender da sorte**
+#   de uma variante (seção 7: a melhor variante sozinha teria 576 min, a pior 644).
+#
+# ## 9. O limiar de decisão pelo custo (slide 16)
+#
+# O limiar é o que **minimiza os minutos** nas previsões do walk-forward (dev). Dois cenários:
+# alarme certo custa 0 min (principal) ou 1 min (TP=1, conservador). A curva abaixo mostra o
+# custo do dev conforme o limiar.
 
 # %%
-# Gráfico 05: recall e precisão conforme o limiar (plano A, validação)
-prec, rec, lims = precision_recall_curve(y_va, p_va_A)
-n_alarmes = np.array([(p_va_A >= l).sum() for l in lims])
-manter = n_alarmes >= 15                      # com menos de 15 alarmes a precisão vira ruído
-prec, rec, lims = prec[:-1][manter], rec[:-1][manter], lims[manter]
-fig, ax = plt.subplots(figsize=(9, 4.2))
-ax.plot(lims, rec, color=AZUL, lw=2, label="recall: das cargas altas, quantas o modelo pega")
-ax.plot(lims, prec, color=LARANJA, lw=2, label="precisão: dos alarmes, quantos são carga alta")
-for (nome, lim), dy in zip(lim_A.items(), [0.97, 0.90, 0.97]):
-    ax.axvline(lim, color=CINZA, ls="--", lw=1)
-    ax.annotate(nome.split(" (")[0], (lim, dy), xytext=(4, 0), textcoords="offset points", fontsize=8, color="#333")
-ax.set_xlabel("limiar: chance mínima para disparar o alarme")
-ax.set_ylabel("proporção")
-ax.set_ylim(0, 1.02)
-ax.set_title("Pegar mais cargas altas custa mais alarmes falsos\n"
-             f"Recall e precisão na validação conforme o limiar ({esc_A['algoritmo']}, {esc_A['conjunto']})",
-             loc="left", fontsize=11)
-ax.legend(fontsize=8, frameon=False, loc="lower left")
-salvar("05_limiar_recall_precisao")
+w = oofs[NOME_OFICIAL]
+lim0 = melhor_limiar(w.carga_alta, w.p, w.min_parada, C_FP, 0.0)
+lim1 = melhor_limiar(w.carga_alta, w.p, w.min_parada, C_FP, 1.0)
+grade = np.round(np.arange(0.02, 0.81, 0.01), 2)
+curva = pd.DataFrame({"limiar": grade,
+                      "min_dev_TP0": [minutos(w.carga_alta, w.min_parada, w.p > t) for t in grade],
+                      "min_dev_TP1": [minutos(w.carga_alta, w.min_parada, w.p > t, C_FP, 1.0) for t in grade],
+                      "alarmes_por_100": [100 * (w.p > t).mean() for t in grade],
+                      "recall": [((w.p > t) & (w.carga_alta == 1)).sum() / w.carga_alta.sum() for t in grade]})
+curva.to_csv(PASTA / "custo_por_limiar_dev.csv", index=False)
+lims = pd.DataFrame([{"cenario": "alarme certo custa 0 min (principal)", "limiar": lim0},
+                     {"cenario": "alarme certo também custa 1 min (TP=1)", "limiar": lim1}])
+lims.to_csv(PASTA / "limiares_dev.csv", index=False)
+print(lims.to_string(index=False))
+
+fig, ax = plt.subplots(figsize=(8, 3.8))
+ax.plot(curva.limiar, curva.min_dev_TP0, color=AZUL, label="alarme certo = 0 min")
+ax.plot(curva.limiar, curva.min_dev_TP1, color=LARANJA, label="alarme certo = 1 min (TP=1)")
+ax.axhline(w.min_parada[w.carga_alta == 1].sum(), color=CINZA, ls="--", lw=1, label="sem modelo (nov–jun)")
+for lim, cor in [(lim0, AZUL), (lim1, LARANJA)]:
+    ax.axvline(lim, color=cor, ls=":", lw=1.2)
+ax.set_xlabel("limiar de alarme (chance prevista)"); ax.set_ylabel("minutos perdidos no dev (nov–jun)")
+ax.set_title(f"Custo conforme o limiar: menor em {lim0:.2f} (TP=0) e {lim1:.2f} (TP=1), longe de 0,5", loc="left")
+ax.legend(fontsize=8)
+plt.tight_layout(); plt.savefig(PASTA / "graficos/03_custo_por_limiar_dev.png", dpi=130, bbox_inches="tight"); plt.show()
 
 # %% [markdown]
 # ## 10. Conferência no TESTE — uma única vez (slides 35 e 36)
 #
-# Tudo já está decidido antes desta célula: algoritmo, hiperparâmetros, conjunto de features e os
-# três limiares (vindos da validação). O teste (jun–ago/2026) só mede.
+# Cada finalista treina no **dev inteiro** e prevê o teste (24/jun a 4/ago/26: 515 cestões, 75
+# cargas altas). O limiar vem do walk-forward do dev.
 #
-# Reportamos os planos A e B e os três cenários de limiar porque a escolha entre eles depende das
-# respostas da EVCOMX, **não** do teste. O baseline entra na mesma tabela, na mesma métrica.
+# **Transparência.** Este teste foi aberto uma vez na otimização por minutos (31/out/2026), só para
+# os finalistas registrados antes (`otimizacao_minutos/finalistas_dev_pre_registro.csv`). O código
+# aqui refaz exatamente a mesma conta, com os mesmos números. Os algoritmos que não eram finalistas
+# (logística, árvore, florestas com 121, 1 HGB) **não são medidos no teste**: o teste não serve
+# para escolher. O grupo já tinha visto este teste nas rodadas da RF; por isso nada foi escolhido
+# olhando para ele.
 
 # %%
-p_te_A = modelo_A.predict_proba(teste[cols_A])[:, 1]
-p_te_B = modelo_B.predict_proba(teste[cols_B])[:, 1]
-res = []
-for plano, esc, p, lims in [("A (com histórico)", esc_A, p_te_A, lim_A), ("B (sem histórico)", esc_B, p_te_B, lim_B)]:
-    for c in CENARIOS:
-        res.append({"plano": plano, "modelo": f"{esc['algoritmo']} {esc['versao']} | {esc['conjunto']}", "cenario": c,
-                    "PR-AUC": average_precision_score(y_te, p), "ROC-AUC": roc_auc_score(y_te, p),
-                    **medir(y_te, p, lims[c])})
-dummy = algoritmos()["Baseline: maioria"].fit(treino[cols_A], y_tr)
-p_dummy = dummy.predict_proba(teste[cols_A])[:, 1]
-res.append({"plano": "baseline", "modelo": "Baseline: maioria", "cenario": "sempre 'normal'",
-            "PR-AUC": average_precision_score(y_te, p_dummy), "ROC-AUC": 0.5, **medir(y_te, p_dummy, 0.5)})
-alarme_vol_te = teste[COL_VOL] > LIM_VOL
-res.append({"plano": "baseline", "modelo": "Baseline: regra de volume", "cenario": f"volume > {LIM_VOL:.1f} m³ (limiar do treino)",
-            "PR-AUC": average_precision_score(y_te, teste[COL_VOL]), "ROC-AUC": roc_auc_score(y_te, teste[COL_VOL]),
-            **medir(y_te, teste[COL_VOL].to_numpy(), np.nextafter(LIM_VOL, np.inf))})
-tab_teste = pd.DataFrame(res)
-tab_teste.round(3)
+FINALISTAS = [NOME_OFICIAL, NOME_RESERVA, "5 HGB, histórico sem a corrida anterior (lag2)", NOME_RF6, NOME_REGRA]
+SEM_TESTE = TESTE.min_parada.sum()
+y_te = TESTE.carga_alta.values.astype(bool)
+teste_lin, prev_teste = [], {}
+for nome in FINALISTAS:
+    p = TESTE["taxa_ca_ult5"].fillna(0).values if nome == NOME_REGRA else prever(ALGORITMOS[nome][1], DEV, TESTE)
+    prev_teste[nome] = p
+    w = oofs[nome]
+    lin = {"modelo": nome, "PR-AUC teste": average_precision_score(y_te, p), "ROC-AUC teste": roc_auc_score(y_te, p)}
+    for c_tp, suf in [(0.0, ""), (1.0, " (TP=1)")]:
+        lim = melhor_limiar(w.carga_alta, w.p, w.min_parada, C_FP, c_tp)
+        a = p > lim
+        lin[f"limiar{suf}"] = lim
+        lin[f"min perdidos teste{suf}"] = minutos(y_te, TESTE.min_parada, a, C_FP, c_tp)
+        if suf == "":
+            lin.update({"alarmes/100": 100 * a.mean(), "recall": (a & y_te).sum() / y_te.sum(),
+                        "precisão": (a & y_te).sum() / max(a.sum(), 1), "FN": int((~a & y_te).sum()),
+                        "FP": int((a & ~y_te).sum())})
+    teste_lin.append(lin)
+res = pd.DataFrame(teste_lin).set_index("modelo")
+res["min sem modelo (teste)"] = SEM_TESTE
+res["economia teste %"] = 100 * (1 - res["min perdidos teste"] / SEM_TESTE)
+res["economia teste % (TP=1)"] = 100 * (1 - res["min perdidos teste (TP=1)"] / SEM_TESTE)
+res.to_csv(PASTA / "resultado_teste.csv")
+print(f"Teste: {len(TESTE)} cestões, {y_te.sum()} cargas altas, {SEM_TESTE:.0f} min de parada sem modelo")
+res.round(3)
 
 # %%
-# Gráfico 06: matrizes de confusão no teste (plano A), nos três cenários
-fig, axes = plt.subplots(1, 3, figsize=(13, 3.8))
-for ax, c in zip(axes, CENARIOS):
-    m = confusion_matrix(y_te, p_te_A >= lim_A[c])
-    ax.imshow(m, cmap="Blues", vmin=0, vmax=m.max() * 1.3)
-    for (i, j), v in np.ndenumerate(m):
-        ax.text(j, i, f"{v}\n({100 * v / m.sum():.0f}%)", ha="center", va="center", fontsize=10,
-                color="white" if v > m.max() * 0.7 else "#222")
-    ax.set_xticks([0, 1], ["previsto\nnormal", "previsto\ncarga alta"])
-    ax.set_yticks([0, 1], ["real\nnormal", "real\ncarga alta"])
-    r = tab_teste[(tab_teste.plano.str.startswith("A")) & (tab_teste.cenario == c)].iloc[0]
-    ax.set_title(f"{c}\nrecall {r['recall']:.0%} · precisão {r['precisao']:.0%}", loc="left", fontsize=10)
-    ax.grid(False)
-fig.suptitle(f"No teste (jun–ago/2026), o limiar decide o que o modelo troca: cargas altas perdidas × alarmes falsos\n"
-             f"{esc_A['algoritmo']}, {esc_A['conjunto']}; limiares escolhidos na validação",
-             x=0.01, ha="left", fontsize=11)
-salvar("06_matriz_confusao_teste")
+fig, axes = plt.subplots(1, 2, figsize=(13, 4.4), gridspec_kw={"width_ratios": [1.6, 1]})
+o = res.sort_values("min perdidos teste")
+ROT = {NOME_OFICIAL: "OFICIAL: 5 HGB + cestão 1", NOME_RESERVA: "Reserva: 5 HGB sem cestão 1",
+       "5 HGB, histórico sem a corrida anterior (lag2)": "5 HGB, histórico lag2", NOME_RF6: "RF 6 features (antigo)",
+       NOME_REGRA: "Regra do histórico (sem modelo)"}
+axes[0].barh([ROT[i] for i in o.index], o["min perdidos teste"],
+             color=[AZUL if i == NOME_OFICIAL else (LARANJA if i == NOME_RF6 else CINZA) for i in o.index])
+axes[0].axvline(SEM_TESTE, color=CINZA, ls="--"); axes[0].invert_yaxis()
+for i, (v, e) in enumerate(zip(o["min perdidos teste"], o["economia teste %"])):
+    axes[0].text(v + 3, i, f"{v:.0f} min ({e:.0f}% a menos)", va="center", fontsize=8)
+axes[0].set_xlim(0, SEM_TESTE * 1.35)
+axes[0].set_title(f"Minutos perdidos no teste (sem modelo: {SEM_TESTE:.0f} min em 40 dias)", loc="left")
+cm = confusion_matrix(y_te, prev_teste[NOME_OFICIAL] > res.loc[NOME_OFICIAL, "limiar"])
+axes[1].imshow(cm, cmap="Blues"); axes[1].grid(False)
+for (i, j), v in np.ndenumerate(cm):
+    axes[1].text(j, i, v, ha="center", va="center", fontsize=13, color="white" if v > cm.max() / 2 else "black")
+axes[1].set_xticks([0, 1], ["previsto: normal", "previsto: carga alta"]); axes[1].set_yticks([0, 1], ["real: normal", "real: carga alta"])
+axes[1].set_title(f"Oficial no teste (limiar {res.loc[NOME_OFICIAL, 'limiar']:.2f})", loc="left")
+plt.tight_layout(); plt.savefig(PASTA / "graficos/04_teste_minutos_e_matriz.png", dpi=130, bbox_inches="tight"); plt.show()
 
 # %% [markdown]
-# ## 11. Explicar o modelo escolhido (slide 32: "preciso explicar cada decisão?")
+# ## 11. Modelo para uso e arquivos gerados
 #
-# - **Permutação na validação:** quanto a PR-AUC cai quando embaralhamos cada feature. Vale para
-#   qualquer algoritmo.
-# - **Coeficientes**, se o escolhido for a regressão logística: efeito de +1 desvio-padrão em cada
-#   feature na chance de carga alta (razão de chances).
-# - **Árvore rasa (3 perguntas)**, só para a apresentação: vira um fluxograma que o pátio entende
-#   (slide 18). Não é o modelo escolhido; a PR-AUC dela é mostrada para comparação.
+# - **`modelo_final.joblib`**: dois pacotes re-treinados com **todos** os dados (treino + validação +
+#   teste), cada um com os 5 modelos, as features e os limiares de menor minutos (calculados nas
+#   previsões do walk-forward + teste, ou seja, sempre fora da amostra):
+#   - `com_cestao1`: o **oficial**;
+#   - `sem_cestao1_reserva`: a reserva, para quando o resultado do cestão 1 faltar.
+# - `modelo_dev.joblib`: o oficial treinado só no dev (é o que a análise e a interpretação usam
+#   para explicar o teste, que ele nunca viu);
+# - `modelo_final.json`: receita, features e limiares em texto;
+# - `previsoes_dev_teste.csv`: chance de cada cestão no walk-forward (dev) e no teste, para cada finalista;
+# - `comparacao_algoritmos.csv`, `variantes_hgb.csv`, `desbalanceamento.csv`, `custo_por_limiar_dev.csv`,
+#   `limiares_dev.csv`, `resultado_teste.csv`, `graficos/`.
 
 # %%
-perm = permutation_importance(modelo_A, valid[cols_A], y_va, scoring="average_precision",
-                              n_repeats=30, random_state=SEED, n_jobs=-1)
-imp = pd.DataFrame({"queda_PR-AUC": perm.importances_mean, "dp": perm.importances_std},
-                   index=cols_A).sort_values("queda_PR-AUC")
-if esc_A["algoritmo"] == "Regressão logística":
-    coef = pd.Series(modelo_A.named_steps["modelo"].coef_[0], index=cols_A)
-    imp["razao_de_chances_1dp"] = np.exp(coef).reindex(imp.index)
+TUDO = pd.concat([DEV, TESTE], ignore_index=True)
 
-fig, ax = plt.subplots(figsize=(9, 4.2))
-ax.barh(imp.index, imp["queda_PR-AUC"], xerr=imp["dp"], color=AZUL, height=0.6,
-        error_kw=dict(ecolor=CINZA, lw=1))
-if "razao_de_chances_1dp" in imp:
-    for y, (v, rc) in enumerate(zip(imp["queda_PR-AUC"], imp["razao_de_chances_1dp"])):
-        ax.annotate(f"chance ×{rc:.2f} por +1 dp", (max(v, 0), y), xytext=(6, -3), textcoords="offset points",
-                    fontsize=8, color="#333")
-ax.axvline(0, color="#333", lw=0.8)
-ax.set_xlabel("queda da PR-AUC na validação ao embaralhar a feature")
-ax.set_title(f"{imp.index[-1]} é a feature de que o modelo mais depende\n"
-             f"Importância por permutação, {esc_A['algoritmo']} ({esc_A['conjunto']})", loc="left", fontsize=11)
-ax.grid(axis="y", visible=False)
-salvar("07_importancia_modelo_escolhido")
-imp.iloc[::-1].round(3)
 
-# %%
-arvore = montar(DecisionTreeClassifier(max_depth=3, min_samples_leaf=30, class_weight="balanced",
-                                       random_state=SEED)).fit(treino[FEAT_FINAL], y_tr)
-pr_arvore = average_precision_score(y_va, arvore.predict_proba(valid[FEAT_FINAL])[:, 1])
-fig, ax = plt.subplots(figsize=(15, 6))
-plot_tree(arvore.named_steps["modelo"], feature_names=FEAT_FINAL, class_names=["normal", "carga alta"],
-          filled=True, rounded=True, impurity=False, proportion=True, precision=2, fontsize=8, ax=ax)
-ax.set_title(f"Fluxograma de 3 perguntas para a apresentação (PR-AUC na validação {pr_arvore:.2f}, "
-             f"contra {esc_A['val_PR-AUC']:.2f} do modelo escolhido)\n"
-             "True = sim, segue à esquerda. value = [normal, carga alta] com pesos balanceados: quanto mais azul, mais carga alta",
-             loc="left", fontsize=11)
-salvar("08_arvore_rasa_fluxograma")
+def empacotar(nome, features):
+    modelos = []
+    for fab, cols in ALGORITMOS[nome][1]:
+        m = fab(); m.fit(TUDO[cols], TUDO["carga_alta"]); modelos.append(m)
+    w = oofs[nome]
+    pas_y = np.r_[w.carga_alta.values, TESTE.carga_alta.values]
+    pas_p = np.r_[w.p.values, prev_teste[nome]]
+    pas_d = np.r_[w.min_parada.values, TESTE.min_parada.values]
+    return {"modelos": modelos, "features": features,
+            "limiar_minutos_TP0": melhor_limiar(pas_y, pas_p, pas_d, C_FP, 0.0),
+            "limiar_minutos_TP1": melhor_limiar(pas_y, pas_p, pas_d, C_FP, 1.0)}
 
-# %% [markdown]
-# ## 12. Modelo para uso e arquivos gerados
-#
-# O modelo avaliado no teste aprendeu só com o treino. Para **uso real**, re-treinamos o mesmo
-# algoritmo, com os mesmos hiperparâmetros, em **treino + validação**: assim ele conhece o regime
-# pós-maio/2026. A análise de modelos mede esse modelo no teste (o teste vem depois de treino e
-# validação, então é legítimo). Os limiares são os da validação e devem ser revistos quando houver
-# dados novos.
-#
-# Guia de Modelagem §4.6: o `.joblib` guarda, **junto com o modelo**, a lista exata de features
-# (`features_`), os limiares (`limiares_`, sem arredondar) e a versão do scikit-learn
-# (`versao_sklearn_`). Continua sendo um `Pipeline`, então `predict_proba` funciona direto.
-#
-# Arquivos:
-# - `comparacao_algoritmos.csv`: seção 6 (fábrica, com os três baselines) e seção 7 (ajustados), CV e validação;
-# - `desbalanceamento.csv`: seção 7b;
-# - `limiares_validacao.csv`: os três cenários de limiar, planos A e B;
-# - `resultado_teste.csv`: a conferência única no teste;
-# - `previsoes_validacao_teste.csv`: chance prevista por cestão (validação e teste), planos A e B;
-# - `modelo_final_planoA.joblib` / `modelo_final_planoB.joblib` + `modelo_final.json`
-#   (features, hiperparâmetros e limiares).
 
-# %%
-tv = pd.concat([treino, valid], ignore_index=True)
-y_tv = tv["carga_alta"]
-info = {}
-for plano, esc, lims in [("A", esc_A, lim_A), ("B", esc_B, lim_B)]:
-    cols = CONJUNTOS[esc["conjunto"]]
-    final = modelos[(esc["conjunto"], esc["algoritmo"], esc["versao"])]
+pacote = {"com_cestao1": empacotar(NOME_OFICIAL, F_OF),
+          "sem_cestao1_reserva": empacotar(NOME_RESERVA, F_PRINC),
+          "como_usar": ("p = média de m.predict_proba(X[features])[:,1] para m em modelos; alarmar se p > limiar. "
+                        "No cestão 2, carga_alta_c1 = resultado do cestão 1 da mesma corrida; no cestão 1, 0."),
+          "versao_sklearn": sklearn.__version__}
+joblib.dump(pacote, PASTA / "modelo_final.joblib")
+dev_modelos = [(fab(), cols) for fab, cols in ALGORITMOS[NOME_OFICIAL][1]]
+for m, cols in dev_modelos:
+    m.fit(DEV[cols], DEV["carga_alta"])
+joblib.dump({"modelos": [m for m, _ in dev_modelos], "features": F_OF, "limiar_minutos_TP0": res.loc[NOME_OFICIAL, "limiar"],
+             "limiar_minutos_TP1": res.loc[NOME_OFICIAL, "limiar (TP=1)"], "treinado_em": "treino + validação (dev)",
+             "versao_sklearn": sklearn.__version__}, PASTA / "modelo_dev.joblib")
+json.dump({"modelo_oficial": {"descricao": "média das probabilidades de 5 HistGradientBoostingClassifier, sem pesos de classe",
+                              "hiperparametros_base": {"learning_rate": 0.03, "max_iter": 300, "max_leaf_nodes": 8,
+                                                       "min_samples_leaf": 40, "l2_regularization": 1.0, "random_state": 42},
+                              "variantes": VARIANTES, "n_features": len(F_OF), "features": F_OF,
+                              "limiar_minutos_TP0": pacote["com_cestao1"]["limiar_minutos_TP0"],
+                              "limiar_minutos_TP1": pacote["com_cestao1"]["limiar_minutos_TP1"],
+                              "limiar_do_dev_usado_no_teste": res.loc[NOME_OFICIAL, "limiar"]},
+           "reserva_sem_cestao1": {"n_features": len(F_PRINC),
+                                   "limiar_minutos_TP0": pacote["sem_cestao1_reserva"]["limiar_minutos_TP0"],
+                                   "limiar_minutos_TP1": pacote["sem_cestao1_reserva"]["limiar_minutos_TP1"]},
+           "treinado_em": "treino + validação + teste (todos os dados)", "versao_sklearn": sklearn.__version__,
+           "antigo_planoA": "Random Forest, 6 features: ver historico_rf6/"},
+          open(PASTA / "modelo_final.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 
-    producao = clone(final).fit(tv[cols], y_tv)
-    import sklearn
-    producao.features_ = list(cols)                       # Guia de Modelagem §4.6: modelo + features + limiar
-    producao.limiares_ = {c: float(v) for c, v in lims.items()}
-    producao.versao_sklearn_ = sklearn.__version__
-    joblib.dump(producao, PASTA_SAIDA / f"modelo_final_plano{plano}.joblib")
-    info[f"plano_{plano}"] = {"algoritmo": esc["algoritmo"], "versao": esc["versao"], "conjunto": esc["conjunto"],
-                              "features": cols,
-                              "hiperparametros": {k: v for k, v in final.named_steps["modelo"].get_params().items()
-                                                  if k in GRADES[esc["algoritmo"]] or f"modelo__{k}" in GRADES[esc["algoritmo"]]
-                                                  or k in ("n_estimators", "class_weight", "C")},
-                              "treinado_com": "treino + validacao",
-                              "limiares": {c: float(v) for c, v in lims.items()}}   # sem arredondar
-(PASTA_SAIDA / "modelo_final.json").write_text(json.dumps(info, ensure_ascii=False, indent=2, default=str),
-                                                encoding="utf-8")
+prev = []
+for nome in FINALISTAS:
+    w = oofs[nome]
+    prev.append(pd.DataFrame({"cd_corrida": w.cd_corrida, "nu_carregamento": w.nu_carregamento, "conjunto": w.conjunto,
+                              "mes": w.mes, "parte": "walk-forward (dev)", "modelo": nome, "p": w.p,
+                              "carga_alta": w.carga_alta, "min_parada": w.min_parada}))
+    prev.append(pd.DataFrame({"cd_corrida": TESTE.cd_corrida, "nu_carregamento": TESTE.nu_carregamento, "conjunto": "teste",
+                              "mes": TESTE.mes, "parte": "teste", "modelo": nome, "p": prev_teste[nome],
+                              "carga_alta": TESTE.carga_alta, "min_parada": TESTE.min_parada}))
+pd.concat(prev).to_csv(PASTA / "previsoes_dev_teste.csv", index=False)
+for k in ["com_cestao1", "sem_cestao1_reserva"]:
+    print(k, "limiares (TP=0, TP=1):", round(pacote[k]["limiar_minutos_TP0"], 4), round(pacote[k]["limiar_minutos_TP1"], 4))
 
-comp = pd.concat([tab_fabrica[tab_fabrica.algoritmo.str.startswith("Baseline")]
-                  .drop(columns="PR-AUC_por_prova").assign(versao="baseline"), cand], ignore_index=True)
-comp.to_csv(PASTA_SAIDA / "comparacao_algoritmos.csv", index=False)
-tab_limiar.to_csv(PASTA_SAIDA / "limiares_validacao.csv", index=False)
-tab_teste.to_csv(PASTA_SAIDA / "resultado_teste.csv", index=False)
-tab_desbal.to_csv(PASTA_SAIDA / "desbalanceamento.csv")
-prev = pd.concat([valid[META[:3]].assign(prob_planoA=p_va_A, prob_planoB=p_va_B, carga_alta=y_va),
-                  teste[META[:3]].assign(prob_planoA=p_te_A, prob_planoB=p_te_B, carga_alta=y_te)])
-prev.to_csv(PASTA_SAIDA / "previsoes_validacao_teste.csv", index=False)
-print(json.dumps(info, ensure_ascii=False, indent=2, default=str))
-print("Salvos em", PASTA_SAIDA)
+# conferência com o pacote da otimização (mesma receita, mesmos dados → mesmas chances)
+antigo = RAIZ / "otimizacao_minutos" / "modelo_minutos.joblib"
+if antigo.exists():
+    pa = joblib.load(antigo)
+    X = TUDO
+    pn = np.mean([m.predict_proba(X[F_OF])[:, 1] for m in pacote["com_cestao1"]["modelos"]], axis=0)
+    po = np.mean([m.predict_proba(X[pa["com_cestao1"]["features"]])[:, 1] for m in pa["com_cestao1"]["modelos"]], axis=0)
+    print("Mesmas chances do modelo da otimização:", np.allclose(pn, po, atol=1e-12),
+          "| mesmos limiares:", np.isclose(pacote["com_cestao1"]["limiar_minutos_TP0"], pa["com_cestao1"]["limiar_minutos_TP0"]))

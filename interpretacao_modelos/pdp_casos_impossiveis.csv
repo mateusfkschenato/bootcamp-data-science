@@ -1,3 +1,5 @@
-,coluna mantida,% pontos sintéticos sem cestão real parecido,PDP: chance no menor valor,PDP: chance no maior valor,ICE: % dos cestões em que a chance sobe
-prop_peso_pesado,densidade_media,10.009708737864077,0.3875178099887147,0.22859699271056824,21.941747572815533
-taxa_ca_ult5,taxa_ca_ult10,57.0873786407767,0.26223633374437677,0.5243460393177564,100.0
+feature,par com,% pontos do PDP em combinações quase inexistentes (< 3 cestões),sobe ou desce,chance no início,chance no fim,% das linhas ICE no mesmo sentido do PDP
+prop_peso_pesado,densidade_media,24.233009708737864,desce,0.18576989023820697,0.14603484618698478,95.0
+h_ewm2,taxa_ca_ult5,58.9514563106796,sobe,0.13555488788730297,0.24158679109412182,100.0
+gusl_t,tem_gusl,2.5631067961165046,sobe,0.07917337225527306,0.16866454573014125,100.0
+densidade_media,prop_peso_pesado,27.352750809061487,desce,0.16494052679909776,0.1491198630482956,100.0

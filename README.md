@@ -17,83 +17,92 @@ Projeto final do bootcamp de Ciência de Dados do Fundo Amanhã, feito com dados
 
 ## O problema
 
-Numa aciaria, a sucata entra no forno elétrico a arco (FEA) em cestões, montados em camadas de material leve, misto e pesado. Às vezes o cestão fica "alto" demais e o forno precisa parar para acomodar a carga. A pergunta do projeto é simples:
+Numa aciaria, a sucata entra no forno elétrico a arco (FEA) em cestões, montados em camadas de material leve, misto e pesado. Às vezes o cestão fica "alto" demais e o forno precisa parar para acomodar a carga. A pergunta do projeto:
 
-> Olhando só para a receita do cestão, dá para saber antes se ele vai dar carga alta?
+> Antes de despejar o cestão, dá para saber se ele vai dar carga alta?
 
 É um problema de classificação (sim ou não), com uma classe rara: só cerca de **15 a 18% dos cestões** têm carga alta.
 
+**O critério de negócio vem da EVCOMX:** o melhor modelo é o que faz **perder menos minutos de forno**. Uma carga alta não detectada custa a duração da parada (~4 min em média); um alarme falso custa 1 min, o tempo de reajustar a montagem.
+
 <p align="center">
-  <img src="EDA/graficos/11_carga_alta_por_faixa_de_peso.png" width="760" alt="Porcentagem de carga alta por faixa de peso do cestão">
+  <img src="selecao_algoritmos/graficos/04_teste_minutos_e_matriz.png" width="860" alt="Minutos perdidos no teste por modelo e matriz de confusão do modelo oficial">
 </p>
-<p align="center"><sub>Um dos primeiros achados da EDA: quanto mais pesado o cestão, menos carga alta. Até 60 t, a taxa fica acima da média; entre 65 e 70 t, cai para 1%.</sub></p>
+<p align="center"><sub>No teste (24/jun a 4/ago/2026), sem modelo o forno perdeu 251 min. Com o modelo oficial, 131 min (48% a menos).</sub></p>
 
 ---
 
-## O caminho
+## O modelo oficial
 
-> **Atualização (out/2026).** A EVCOMX respondeu que camadas de 10 kg e 100 kg também podem ser desconsideradas e deu **2.000 kg** como corte. A limpeza passou a remover todas as camadas abaixo de 2.000 kg (antes, só as de peso zero) e as cinco etapas rodaram de novo. O conjunto final caiu de 9 para 6 features e as conclusões se mantêm. Cada README tem o detalhe.
+**Média das probabilidades de 5 Gradient Boosting** (`HistGradientBoostingClassifier` com hiperparâmetros levemente diferentes, sem pesos de classe), com **121 features**: as 84 da receita do cestão, 36 de histórico do forno, gusa líquida, ritmo e regime recente, e o **resultado do cestão 1**. A EVCOMX confirmou que esse resultado é conhecido quando o cestão 2 ainda pode ser mexido.
 
-O projeto foi feito em seis etapas, uma pasta para cada. Cada etapa lê o que a anterior gerou, então a ordem importa.
+| No teste (515 cestões, 75 cargas altas, 40 dias) | PR-AUC | Minutos perdidos | Economia |
+|---|---|---|---|
+| **Modelo oficial: 5 Gradient Boosting + cestão 1** | **0,567** | **131** | **48%** |
+| Reserva (sem o resultado do cestão 1) | 0,443 | 165 | 34% |
+| Antes: Random Forest com 6 features | 0,404 | 186 | 26% |
+| Regra: só o histórico do forno | 0,358 | 147 | 41% |
+| Sem modelo | — | 251 | — |
+
+O limiar de alarme é o de **menos minutos** no passado (~0,18), não 0,5. O modelo para uso, re-treinado com todos os dados, está em [`selecao_algoritmos/modelo_final.joblib`](selecao_algoritmos/), e o app do simulador usa esse arquivo.
+
+> **Como o projeto chegou aqui.** Até out/2026 o modelo era uma **Random Forest com 6 features**, escolhida pela PR-AUC na validação. Quando a EVCOMX deu o critério de minutos e confirmou o timing do cestão 1, a modelagem foi refeita ([`otimizacao_minutos/`](otimizacao_minutos/README.md): 168 configurações no dev, finalistas registrados antes, teste aberto uma vez). O vencedor virou o modelo oficial e **todas as etapas foram refeitas em cima dele**. O material da RF ficou em `historico_rf6/` dentro de cada pasta, e ela continua como linha de comparação nas tabelas.
+
+---
+
+## O caminho, aula por aula
+
+Cada etapa lê o que a anterior gerou, então a ordem importa. O protocolo comum (régua de minutos, limiar, walk-forward e a receita dos 5 Gradient Boosting) fica num lugar só, [`comum/protocolo.py`](comum/protocolo.py).
 
 ```
-original_dataset/  →  EDA/  →  feature_selection/  →  selecao_algoritmos/  →  analise_modelos/  →  verificacao_validacao/  →  interpretacao_modelos/
-  dados brutos       limpeza     84 candidatas          4 algoritmos            métricas, custo       confere tudo, mede o          por que o modelo
-                     e gráficos  → 6 features           → Random Forest         e tradução para       drift, critérios de           decide assim: SHAP,
-                                                                                 a operação            aceitação e monitoramento     LIME, contrafactuais
+original_dataset/ → EDA/ → feature_selection/ → selecao_algoritmos/ → analise_modelos/ → verificacao_validacao/ → interpretacao_modelos/ → app_streamlit/
+  dados brutos      limpeza   121 features       5 Gradient Boosting   minutos, PR-AUC,   confere tudo, drift,     SHAP, LIME,             simulador
+                    e sinais  + dataset de       (walk-forward e       calibração,        robustez, critérios      contrafactuais em       da corrida
+                              modelagem          teste uma vez)        segmentos          e monitoramento          toneladas
 ```
 
-As bibliotecas e versões usadas estão em [`requirements.txt`](requirements.txt).
-
-| Etapa | O que se fez | Detalhes |
+| Etapa (aula) | O que se fez | Detalhes |
 |---|---|---|
-| **EDA** | Junta as 4 tabelas, limpa (camadas abaixo de 2.000 kg saem: peso zero é o gancho que não pegou o material, e a EVCOMX deu 2 t como corte para as camadas muito leves), cria as primeiras features e investiga os dados. | [`EDA/README.md`](EDA/README.md) |
-| **Feature selection** | Gera 84 features candidatas por cestão e escolhe 6 por votação entre seis métodos (filtro, RFE, L1, Elastic Net, permutação, Boruta). Entrega a tabela das features finais: como se calcula, por que entra e quando está disponível. | [`feature_selection/README.md`](feature_selection/README.md) |
-| **Seleção de algoritmos** | Compara regressão logística, árvore, Random Forest e Gradient Boosting com validação cruzada temporal, contra três baselines (trivial, regra de volume e logística). Fica a Random Forest. | [`selecao_algoritmos/README.md`](selecao_algoritmos/README.md) |
-| **Análise de modelos** | Mede o modelo com as métricas certas (tabela única com PR-AUC, recall, precisão, F2, Brier, MCC), compara com regras simples, calibra as chances, analisa erros e segmentos, explica o modelo e traduz os erros em alarmes e minutos de parada. | [`analise_modelos/README.md`](analise_modelos/README.md) |
-| **Verificação e validação** | Confere automaticamente as etapas anteriores (31 conferências, com alvo embaralhado e testes da agregação), faz o backtesting mês a mês, testa erro de pesagem e o corte de peso das camadas, mede o quanto os dados mudaram depois de maio, valida domínio e negócio, propõe critérios de aceitação e um plano de monitoramento. Não escolhe nada de novo. | [`verificacao_validacao/README.md`](verificacao_validacao/README.md) |
-| **Otimização por minutos** | Refaz a modelagem com o critério da EVCOMX: **menos minutos de forno perdidos** (parada não evitada + 1 min por alarme falso). 92 configurações no dev (walk-forward mensal), finalistas registrados antes do teste, teste aberto uma vez. O modelo escolhido (média de 5 Gradient Boosting, 120 features + o resultado do cestão 1, cujo timing a EVCOMX confirmou) leva a PR-AUC de 0,40 para **0,57** e os minutos perdidos de 186 para **131** no teste (48% a menos que sem modelo). | [`otimizacao_minutos/README.md`](otimizacao_minutos/README.md) |
-| **Interpretação** | Explica o modelo de uso no teste: logística e árvore rasa como "caixa de vidro", importância por cinco réguas (impureza, permutação, logística, SHAP, Saabas), PDP/ICE com os casos impossíveis, SHAP exato e LIME num falso negativo, contrafactuais em toneladas de pesado, cestão 1 × cestão 2 e uma explicação de 3 frases para cada alarme. Não muda o modelo. | [`interpretacao_modelos/README.md`](interpretacao_modelos/README.md) |
+| **EDA** | Junta as 4 tabelas, limpa (camadas abaixo de 2.000 kg saem), investiga os dados. Novo item 9: os três sinais que o modelo oficial mais usa (histórico do forno, gusa líquida e cestão 1 → cestão 2). | [`EDA/README.md`](EDA/README.md) |
+| **Feature selection** | 84 candidatas da receita + 36 novas + o resultado do cestão 1 = **121 features**, organizadas em 10 grupos. Filtro, redundância, permutação por grupo e a decisão: tirar um grupo de cada vez no walk-forward, medindo minutos e PR-AUC. Entrega o **dataset de modelagem** do modelo oficial. | [`feature_selection/README.md`](feature_selection/README.md) |
+| **Seleção de algoritmos (Aula 05)** | Logística, árvore, Random Forest, Extra Trees, 1 Gradient Boosting e a média de 5, contra quatro baselines, no walk-forward mensal. Regra pré-registrada + escada de complexidade. Limiar pelo custo. Teste uma vez. Salva o modelo para uso. | [`selecao_algoritmos/README.md`](selecao_algoritmos/README.md) |
+| **Análise de modelos (Aula 06)** | Tabela única (minutos, PR-AUC, recall, precisão, F2, MCC, Brier), curvas, custo conforme o limiar, calibração e faixas de risco, estabilidade mês a mês, bootstrap por dia, segmentos, falsos negativos e falsos positivos. | [`analise_modelos/README.md`](analise_modelos/README.md) |
+| **Verificação e validação (Aula 07)** | Checklist automático (o script para se algo não bater), alvo embaralhado, gap, tipos de validação cruzada, drift, re-treino mensal, erro de balança, corte de peso, sementes, critérios de aceitação, monitoramento, validação de domínio e de negócio. | [`verificacao_validacao/README.md`](verificacao_validacao/README.md) |
+| **Interpretação (Aula 08)** | Caixa de vidro (logística de 10 features e árvore que imita o modelo), importância por grupo, PDP/ICE com casos impossíveis, TreeSHAP exato, LIME, contrafactuais em toneladas de pesado, cestão 1 × 2 e uma explicação de 3 frases por alarme. | [`interpretacao_modelos/README.md`](interpretacao_modelos/README.md) |
+| **Deploy (Aula 09)** | App Streamlit com a identidade da EVCOMX: monta a corrida camada por camada e o modelo oficial diz se vai dar carga alta. | [`app_streamlit/README.md`](app_streamlit/README.md) |
+| *Registro* | Como o modelo oficial foi encontrado, o pré-registro dos finalistas e três cenários operacionais. | [`otimizacao_minutos/README.md`](otimizacao_minutos/README.md) |
 
-Cada README de etapa tem as decisões, os números e as limitações com mais detalhe. Este aqui é o resumo.
-
-As etapas de feature selection em diante seguem as aulas 05 a 08 do bootcamp e o **Guia de Modelagem Preditiva da EVCOMX**. Cada README tem uma seção dizendo onde está cada item do Guia.
+As bibliotecas e versões estão em [`requirements.txt`](requirements.txt). Cada pasta tem o script `.py` (células `#%%`) e o notebook `.ipynb` já executado.
 
 ---
 
 ## Os dados
 
-São quatro arquivos fornecidos pela EVCOMX, cobrindo cerca de um ano de operação (ago/2025 a ago/2026):
+Quatro arquivos fornecidos pela EVCOMX, cobrindo ago/2025 a ago/2026:
 
 - `infos_camadas.csv`: uma linha por camada de material em cada cestão (peso, horário, baia);
 - `infos_materiais.csv`: densidade, rendimento metálico e energia de cada material;
 - `dicionario_tipo_material.csv`: se cada material é leve, misto ou pesado;
 - `VariavelResposta.csv`: se o cestão teve carga alta e quanto durou a parada.
 
-A unidade de análise é o **cestão** (carregamento 1 ou 2 de cada corrida), o que dá uns 3.500 exemplos. A divisão é **70% treino / 15% validação / 15% teste, em ordem de tempo**, para que o modelo nunca aprenda com o futuro.
+A unidade de análise é o **cestão** (carregamento 1 ou 2 de cada corrida): 3.501 exemplos. A divisão é **70% treino / 15% validação / 15% teste, em ordem de tempo**. Toda escolha usa só treino + validação (o "dev"); o teste foi aberto uma vez.
 
 ---
 
 ## O que encontramos
 
-**As 6 features finais** têm leitura física direta: proporção de material pesado, densidade média do cestão, toneladas por ciclo de montagem, um tipo de pacote de chaparia (PACB) e a taxa de carga alta nas últimas 5 e 10 corridas.
+**Carga alta puxa carga alta.** Depois de uma corrida com carga alta, a seguinte dá carga alta 55% das vezes, contra 19%. O histórico do forno é o grupo de features que mais pesa no modelo.
 
-**O volume total não é o que importa.** Os cestões são enchidos até volumes parecidos; o que muda é quanto peso cabe nesse volume. O sinal está na densidade e na proporção de pesado.
+**Sem gusa líquida, quase não há carga alta** (4% das corridas sem gusa, contra 34–45% com 30 t ou mais).
 
-**Carga alta puxa carga alta.** O histórico recente do forno é o sinal mais forte de todos. Uma regra que só olha esse histórico, sem modelo nenhum, já fica muito acima do chute.
+**O resultado do cestão 1 ajuda muito, e ao contrário do que se espera.** Quando o cestão 1 dá carga alta, o cestão 2 da mesma corrida dá **menos** (10% contra 18%). Usar esse resultado leva a PR-AUC do teste de 0,44 para 0,57. Fica a pergunta para a EVCOMX: a parada ajuda a fundir, ou o pátio corrige o cestão 2?
 
-**Maio de 2026 mudou o jogo.** A partir de maio há menos material pesado e menos ciclos por cestão. Modelos que iam bem antes disso pioram depois, e isso aparece em todas as etapas.
+**A receita do cestão importa pela densidade e pela proporção de pesado, não pelo volume.** O volume total sozinho fica no nível do chute.
 
-**O modelo empata com a regra do histórico.** No teste (jun–ago/2026), a Random Forest tem PR-AUC 0,39, contra 0,36 de uma regra que só olha as últimas 5 corridas: a diferença está dentro do ruído. Com o mesmo número de alarmes, a regra acerta mais. Re-treinado todo mês (backtesting walk-forward), o modelo fica um pouco à frente em PR-AUC, mas empata nos meses mais recentes no orçamento de alarmes.
+**Maio de 2026 mudou o jogo.** Desde maio há menos material pesado e menos ciclos por cestão. Por isso o walk-forward re-treina todo mês e existem as features de "regime recente".
 
-**A regra de volume do Guia não funciona nestes dados.** Alarmar quando o volume passa de um limiar fica no nível do chute (PR-AUC 0,15 no teste). O modelo a supera com folga.
+**O modelo é tecnicamente sólido.** 29 conferências automáticas sem falha; com o alvo embaralhado, a nota cai ao chute; economiza minutos em todos os meses do dev; um erro de 10% na balança muda 4% dos alarmes; os sentidos das features batem com a física.
 
-**O modelo é tecnicamente sólido.** Com o alvo embaralhado, a nota cai ao acaso (sem vazamento escondido); um erro de 10% na balança muda a chance em ~0,04; trocar o corte das camadas leves (0, 100, 1.000 ou 2.000 kg) muda a PR-AUC em menos de 0,03; os sentidos das features batem com a física do forno. A chance crua vem inflada pelos pesos de classe, e a calibração de Platt corrige isso sem mudar a ordem dos cestões.
+**Contra a regra simples do histórico, o modelo ordena muito melhor (PR-AUC 0,57 × 0,36), mas a economia de minutos no teste ainda cabe no ruído** (131 × 147 min, IC 90% da diferença de −59 a +21). No dev, a diferença é grande (616 × 816 min).
 
-**O histórico do forno vale mais que a receita do cestão para o modelo.** Embaralhando as duas colunas de histórico juntas, a PR-AUC cai 0,21; embaralhando toda a receita, 0,09. Um terço dos alarmes é puxado mais pelo histórico do que por qualquer coisa do cestão. O `feature_importances_` da floresta esconde isso (põe o histórico em 4º e 5º) porque favorece colunas com muitos valores.
-
-**O modelo alarma demais o cestão 2.** No teste, 40% dos cestões 2 recebem alarme, contra 28% dos cestões 1, com quase a mesma taxa de carga alta. O cestão 2 tem bem menos pesado, e o modelo lê isso como risco. Fica a pergunta para a EVCOMX.
-
-**Se vale a pena depende da EVCOMX.** O ganho em minutos de forno depende de quanto custa um alarme falso e de quantas cargas altas o pátio consegue evitar com o alarme. As tabelas de cenários (verificação, seção 6.4) estão prontas para receber esses números.
-
-**Medido em minutos, o modelo escolhido perde bem menos que o antigo** (out/2026, depois da resposta da EVCOMX: alarme falso = 1 min). No teste, sem modelo o forno perdeu 251 min em 40 dias. A RF de 6 features deixaria a perda em 186 min, e o modelo escolhido em **131 min** (PR-AUC 0,57). Ele usa o resultado do cestão 1 para prever o cestão 2, e a EVCOMX confirmou que esse resultado é conhecido a tempo. Essa diferença fica fora do ruído do teste. Sem o cestão 1, o ganho seria menor e ainda dentro do ruído (165 min). Detalhes em [`otimizacao_minutos/`](otimizacao_minutos/README.md).
+**O ganho depende do que o pátio faz com o alarme.** "Minutos evitados" supõe que o reajuste evita a parada inteira. Se o alarme certo também custar 1 min, a economia no teste cai de 48% para 22–25% (conforme o limiar); se o reajuste evitar só metade da parada, para 6% (verificação, seção 6.4). É a pergunta mais importante para a EVCOMX agora.

@@ -1,149 +1,134 @@
 ## Seleção de Algoritmos e Modelagem — Predição de Carga Alta (EVCOMX)
 
-Segue a **Aula 05 do bootcamp** (Seleção de Algoritmos e Modelagem) e o **Guia de Modelagem Preditiva da EVCOMX** (§4), e continua a pasta `feature_selection/`.
+Segue a **Aula 05 do bootcamp** (Seleção de Algoritmos e Modelagem) e o **Guia de Modelagem Preditiva da EVCOMX** (§4), e continua `feature_selection/`.
 
-> **Rodada de out/2026 (corte de 2.000 kg).** A EDA passou a remover as camadas abaixo de 2.000 kg (resposta da EVCOMX) e todas as etapas foram refeitas. A feature selection agora entrega **6 features** (antes, 9). O plano A continua o mesmo tipo de modelo (Random Forest de fábrica); o plano B passou a ser a Random Forest **ajustada** (`max_depth=4`), que agora ganha da de fábrica na validação. Os números abaixo são desta rodada.
+**Algoritmo oficial: média das probabilidades de 5 `HistGradientBoostingClassifier`**, sem pesos de classe, com as **121 features oficiais** (120 + `carga_alta_c1`, o resultado do cestão 1).
+
+> **Antes (out/2026), o escolhido era uma Random Forest com 6 features** (plano A), pela PR-AUC na validação. Está em [`historico_rf6/`](historico_rf6/README.md). A troca veio quando a EVCOMX deu o critério de negócio: **o melhor modelo é o que faz perder menos minutos de forno**. A RF continua aqui como linha de comparação.
 
 ### Como rodar
 
-1. `EDA/transforma_dataset.py`: gera o `EDA/base.csv` limpo.
-2. `feature_selection/feature_selection.py`: gera os CSVs de features.
-3. `selecao_algoritmos/selecao_algoritmos.py` (células `#%%`) ou `selecao_algoritmos.ipynb` (mesmo conteúdo, já executado). Leva ~4 min por causa da busca de hiperparâmetros.
+1. `EDA/transforma_dataset.py` e `feature_selection/feature_selection.py`.
+2. `selecao_algoritmos/selecao_algoritmos.py` (células `#%%`) ou `selecao_algoritmos.ipynb` (mesmo conteúdo, já executado). Leva ~15 min.
 
-O código acha a raiz do projeto sozinho. Não recalcula nenhuma feature: lê `dataset_features_completo.csv`, `dataset_modelagem_fs.csv` e `votos_feature_selection.csv` da feature selection.
+O protocolo comum (régua de minutos, limiar, walk-forward e a receita dos 5 HGB) está em `comum/protocolo.py`. O script **para com erro** se a regra de escolha deixar de apontar para o oficial.
 
 ### Arquivos gerados
 
 | Arquivo | O que é |
 |---|---|
-| `comparacao_algoritmos.csv` | Todos os modelos (os três baselines, de fábrica e ajustados): PR-AUC na CV temporal, na validação e IC 90% |
-| `desbalanceamento.csv` | Pesos de classe × sem peso × subamostragem (seção 7b) |
-| `limiares_validacao.csv` | Os três limiares de decisão, planos A e B, medidos na validação |
-| `resultado_teste.csv` | A conferência única no teste, com a maioria e a regra de volume |
-| `previsoes_validacao_teste.csv` | Chance de carga alta prevista para cada cestão da validação e do teste |
-| `modelo_final_planoA.joblib` / `modelo_final_planoB.joblib` | Modelos para uso, re-treinados em treino + validação. Cada um guarda junto a lista de features (`features_`), os limiares sem arredondar (`limiares_`) e a versão do scikit-learn (`versao_sklearn_`) |
-| `modelo_final.json` | Features, hiperparâmetros e limiares (sem arredondar) de cada plano |
-| `graficos/` | 8 figuras para a apresentação |
+| **`modelo_final.joblib`** | **O modelo para uso**, re-treinado com todos os dados. Dois pacotes, cada um com os 5 modelos, as features e os limiares de menor minutos: `com_cestao1` (o oficial; limiar 0,183, ou 0,300 se o alarme certo também custar 1 min) e `sem_cestao1_reserva` (para quando o resultado do cestão 1 faltar; 0,181 / 0,218). É o arquivo que o app usa |
+| `modelo_dev.joblib` | O oficial treinado só no dev; é o que a análise e a interpretação usam para explicar o teste |
+| `modelo_final.json` | Receita, hiperparâmetros, features e limiares em texto |
+| `previsoes_dev_teste.csv` | Chance de cada cestão no walk-forward (dev) e no teste, para cada finalista |
+| `comparacao_algoritmos.csv` | Todos os algoritmos e baselines: minutos e PR-AUC no walk-forward, PR-AUC na validação |
+| `variantes_hgb.csv`, `desbalanceamento.csv`, `escada_de_complexidade.csv` | As 5 variantes, pesos de classe × sem peso, a escada |
+| `custo_por_limiar_dev.csv`, `limiares_dev.csv` | Custo conforme o limiar e os dois limiares |
+| `resultado_teste.csv` | O teste, uma vez, para os finalistas |
+| `graficos/` | 4 figuras |
 
 ### Passo a passo (slide 36 da aula)
 
-1. **Tipo de pergunta: classificação.** "Este cestão vai dar carga alta?" é sim ou não. A regressão linear fica de fora.
-2. **Métrica: PR-AUC** para comparar algoritmos. A acurácia engana: quem sempre diz "normal" acerta 82–85%. Recall e precisão vêm depois, com o limiar.
-3. **Split e baselines.** O split 70/15/15 temporal vem da coluna `conjunto`. São três réguas (Guia de Modelagem §4.2):
-   - **trivial:** `DummyClassifier`, maioria e sorteio, com PR-AUC de ~0,18 na validação;
-   - **física, regra de volume:** alarme se o volume estimado passa de **56,4 m³**, limiar escolhido no treino (melhor F2, no máximo metade em alarme). É o que a operação faria hoje sem ML;
-   - **estatística:** a regressão logística com as 6 features finais.
-4. **Pipeline.** Mediana para vazios, padronização só na logística e o modelo. Quatro algoritmos: logística, árvore, Random Forest e Gradient Boosting (a trajetória recomendada pelo Guia, §4.3).
-5. **Validação cruzada temporal.** Cinco provas em janela crescente dentro do treino, por corrida. O `cv=5` da aula sorteia linhas e vazaria o futuro.
-6. **Hiperparâmetros.** `GridSearchCV` nas mesmas provas temporais, otimizando a PR-AUC (`average_precision`), como pede o Guia (§4.5). Todos os experimentos ficam em `comparacao_algoritmos.csv`.
-6b. **Desbalanceamento** (Guia §4.4): pesos de classe, testados contra "sem peso" e subamostragem (seção 7b, abaixo).
-7. **Escada (slide 33).** Fica o modelo mais simples a até 0,02 da melhor PR-AUC na validação.
-8. **Limiar.** Escolhido na validação, em três cenários.
-9. **Teste uma única vez.**
+1. **Classificação.** "Este cestão vai dar carga alta?" é sim ou não. A duração da parada não é prevista (nenhuma feature tem \|Spearman\| > 0,1 com ela): ela é o peso de cada carga alta perdida na régua.
+2. **Métrica pelo custo do erro.** Carga alta perdida = a duração da parada (~4 min em média); alarme falso = 1 min (EVCOMX). **A métrica de escolha são os minutos perdidos**; a PR-AUC vem junto, como métrica principal do grupo para a ordem dos cestões. Compensa alarmar quando a chance passa de ~20%: o limiar não é 0,5.
+3. **Separação e baselines.** Split 70/15/15 temporal por corrida. **Dev = treino + validação.** A comparação é por **walk-forward mensal**: para cada mês de nov/25 a jun/26, treina com tudo antes e prevê o mês; os minutos contam de jan a jun/26 (950 min sem modelo), com o limiar de cada mês vindo dos meses anteriores. Quatro réguas: sem modelo (maioria), a regra de volume do Guia, a **regra do histórico** e a logística.
+4. **Algoritmos:** logística, árvore rasa, Random Forest (121 e a antiga de 6), Extra Trees, 1 Gradient Boosting e a média de 5.
+5. **Comparação justa** no walk-forward (seção 6).
+6. **Hiperparâmetros** (seção 7) e **desbalanceamento** (7b).
+7. **Escada e regra de escolha** declaradas (seção 8).
+8. **Limiar pelo custo** (seção 9).
+9. **Teste uma vez** (seção 10).
 
-**Sobre o split do Guia (§4.1).** O Guia sugere `StratifiedGroupKFold` por corrida para comparar modelos. Usamos uma CV **agrupada por corrida e temporal**, que é mais rígida: além de nunca separar os cestões de uma corrida, nunca treina com o futuro. A verificação (seção 4) mostrou que as CVs embaralhadas, inclusive a agrupada, são as mais otimistas. O teste final temporal, nunca usado para escolher, também segue o Guia.
+### Resultado no walk-forward (dev)
 
-Conjuntos de features testados:
-- **final (6)**, da feature selection;
-- **consenso (18)**, as features com ≥ 4 votos;
-- **final sem histórico (4)**, sem `taxa_ca_ult5/10`. É o plano B, caso o resultado das corridas anteriores não esteja disponível na hora de prever.
+![Minutos e PR-AUC no walk-forward](graficos/01_algoritmos_minutos_e_prauc.png)
 
-### Resultado
+| Modelo | Min. perdidos jan–jun (de 950) | Economia | PR-AUC walk-forward | PR-AUC validação |
+|---|---|---|---|---|
+| Regressão logística (121) | 611 | 36% | 0,459 | 0,350 |
+| **OFICIAL: 5 HGB + resultado do cestão 1** | **616** | **35%** | **0,500** | **0,450** |
+| Reserva: 5 HGB sem o cestão 1 | 622 | 35% | 0,424 | 0,383 |
+| Gradient Boosting, 1 modelo | 632 | 34% | 0,496 | 0,436 |
+| 5 HGB, histórico lag2 | 643 | 32% | 0,419 | 0,386 |
+| Random Forest (121) | 693 | 27% | 0,462 | 0,467 |
+| Extra Trees (121) | 741 | 22% | 0,473 | 0,452 |
+| Antigo: RF 6 features (plano A) | 751 | 21% | 0,413 | 0,427 |
+| Árvore de decisão rasa | 766 | 19% | 0,358 | 0,302 |
+| Regra: só o histórico | 816 | 14% | 0,281 | 0,337 |
+| Sem modelo (maioria) | 950 | 0% | 0,163 | 0,179 |
+| Regra de volume (Guia) | 1.031 | −8% | 0,150 | 0,147 |
 
-**Plano A (com histórico): Random Forest de fábrica com as 6 features finais.** A configuração é `n_estimators=300`, `min_samples_leaf=5` e `class_weight="balanced_subsample"`.
+### A regra de escolha e a escada (seção 8)
 
-| Modelo (validação, abr–jun/2026) | PR-AUC | IC 90% |
+- **Regra 1, declarada antes de abrir o teste** (`otimizacao_minutos/finalistas_dev_pre_registro.csv`): entre os finalistas, fica o de **menos minutos no walk-forward**, com PR-AUC pelo menos a da RF do grupo. Resultado: **o oficial** (616 min). O resultado do cestão 1 entrou com a condição "se a EVCOMX confirmar o timing", e a EVCOMX confirmou em 31/out/2026.
+- **Regra 2, a escada (slide 33):** um degrau mais simples (linear < árvore < floresta < boosting) toma o lugar se **empatar nas duas réguas**: minutos a até 30 min e PR-AUC a até 0,02. Nenhum toma.
+- **A regressão logística empata nos minutos (611 × 616), mas perde na ordem dos cestões:** PR-AUC 0,46 × 0,50 no walk-forward e 0,35 × 0,45 na validação, os dois fora do ruído. Ela não toma o lugar, mas fica registrada como a **alternativa simples** a reavaliar quando houver um lote novo de dados. Ela não é medida no teste: não era finalista, e o teste não serve para escolher.
+- As florestas com 121 features não chegam perto nos minutos (693–741). O que faz a diferença é o Gradient Boosting, melhor justamente na faixa de recall de 60–80%, onde cai o limiar de menor custo.
+
+### Por que a média de 5 (seção 7)
+
+![Variantes](graficos/02_variantes_hgb.png)
+
+| Variante | PR-AUC WF | Min. jan–jun |
 |---|---|---|
-| **Random Forest, fábrica, final (6)** | **0,427** | 0,35–0,52 |
-| Random Forest, fábrica, consenso (18) | 0,428 | 0,35–0,52 |
-| Gradient Boosting, ajustado, consenso (18) | 0,411 | 0,33–0,50 |
-| Gradient Boosting, fábrica, final (6) | 0,395 | 0,32–0,49 |
-| Árvore de decisão, ajustada, consenso (18) | 0,334 | 0,27–0,41 |
-| Regressão logística, fábrica, consenso (18) | 0,302 | 0,24–0,38 |
-| Regressão logística, final (6) | 0,286 | 0,23–0,36 |
-| Baseline (maioria) | 0,179 | — |
-| **Baseline físico: regra de volume** | **0,147** | — |
+| `l2=5` | 0,496 | 632 |
+| `lr=0,05` | 0,493 | 607 |
+| `leaves=16` | 0,496 | **576** |
+| `leaf=20` | 0,502 | 611 |
+| `it=150` | 0,481 | 644 |
+| **Média das 5 (oficial)** | **0,500** | **616** |
 
-O Gradient Boosting fica a 0,02 da Random Forest. Pela regra da escada, fica a Random Forest: é um degrau abaixo e precisa de menos ajuste. Entre os dois conjuntos de mesma nota (0,427 e 0,428), fica o de 6 features.
-
-**Plano B (sem histórico): Random Forest ajustada (`max_depth=4`) com 4 features.** PR-AUC na validação de 0,316, contra 0,179 do chute. A de fábrica ficou em 0,305; na rodada anterior (7 features) a de fábrica tinha vencido, com 0,318.
-
-**A regra de volume não serve de régua: fica no nível do chute.** PR-AUC 0,159 na CV, 0,147 na validação (ROC-AUC 0,43, ou seja, ligeiramente invertida) e 0,149 no teste. Com o limiar do treino (56,4 m³; antes, 60,4 m³, porque os cestões perderam as camadas pequenas), ela dispara ~53 alarmes a cada 100 cestões e acerta 14–15% deles. O Guia avisa: "se o modelo final não superar o baseline de regra de volume por uma margem relevante, o argumento de ML fica fraco". O modelo supera com folga (0,43 contra 0,15 na validação). A régua que de fato aperta é outra, a **regra do histórico**, medida na análise de modelos.
+Escolher a melhor variante (576 min) seria otimista: com muitas tentativas, a melhor tende a ter sorte. A média depende menos de um ajuste específico. Ao todo, 168 configurações foram testadas na otimização (`otimizacao_minutos/experimentos/`).
 
 ### Desbalanceamento (seção 7b, Guia §4.4)
 
-Random Forest de fábrica, 6 features, mesmas provas temporais:
+| Estratégia | PR-AUC WF | Min. jan–jun | Chance média | Taxa real |
+|---|---|---|---|---|
+| **sem peso (oficial)** | **0,500** | **616** | **0,160** | 0,163 |
+| pesos de classe (`balanced`) | 0,492 | 654 | 0,299 | 0,163 |
 
-| Estratégia | CV PR-AUC | Validação PR-AUC | Chance média na validação (taxa real 0,18) |
-|---|---|---|---|
-| sem peso | 0,414 | 0,410 | 0,25 |
-| **pesos de classe** (`balanced_subsample`, a usada) | 0,413 | 0,427 | 0,41 |
-| subamostragem 1:1, só no treino de cada prova | 0,419 | 0,411 | 0,58 |
+Sem peso, a chance média fica igual à taxa real: **o modelo sai calibrado** e o limiar escolhido no passado continua valendo no modelo re-treinado. Com peso, a chance quase dobra e os minutos pioram. A RF antiga usava pesos e por isso precisava de calibração de Platt. Não usamos SMOTE: ele cria cestões que podem ser receitas impossíveis.
 
-- **Na ordem dos cestões, as três estratégias empatam** (diferenças de até 0,02, dentro do ruído; a PR-AUC não depende do limiar, e o limiar é ajustado depois). A subamostragem joga fora ~70% dos normais sem ganhar nada na validação.
-- **O efeito dos pesos é na escala da chance:** quanto mais peso na classe rara, mais inflada a chance. É por isso que a análise calibra as chances antes de mostrá-las ao pátio.
-- **Não usamos SMOTE:** ele cria cestões sintéticos interpolando outros, que podem ser receitas fisicamente impossíveis (Guia §4.4).
-- A comparação **não muda a escolha** da seção 8: ela só documenta a estratégia.
+### Limiar de decisão (seção 9)
 
-### Descoberta principal: quem vai bem antes de maio não vai bem depois (gráfico 03)
+![Custo conforme o limiar](graficos/03_custo_por_limiar_dev.png)
 
-- **A regressão logística é a melhor na CV temporal e a pior na validação.** Na CV (ago/2025–abr/2026) ela tem PR-AUC 0,45; na validação (abr–jun/2026), 0,29.
-- **Ajustar hiperparâmetros na CV quase nunca ajudou a validação.** Na Random Forest com 6 features, a PR-AUC caiu de 0,427 (fábrica) para 0,377 (ajustada). A exceção é o plano B, em que a versão ajustada, mais rasa, ganhou por pouco (0,316 × 0,305).
+| Cenário | Limiar (do dev) |
+|---|---|
+| Alarme certo custa 0 min (principal) | **0,178** |
+| Alarme certo também custa 1 min (TP=1) | 0,300 |
 
-As duas coisas têm a mesma causa: a **mudança de regime de maio/2026**. O treino é todo do regime antigo, então a CV dentro dele premia o que funciona naquele regime. Por isso:
-- a validação decide entre os modelos;
-- a versão de fábrica de cada algoritmo continua candidata.
+Os limiares do modelo para uso (0,183 e 0,300) são recalculados com as previsões do walk-forward + teste, sempre fora da amostra.
 
-A pergunta 1 do e-mail à EVCOMX é justamente sobre isso.
+### Conferência no teste (24/jun a 4/ago/2026, uma única vez)
 
-> **Transparência:** na primeira rodada, só os modelos ajustados eram candidatos. O escolhido foi a Random Forest ajustada com 22 features (validação 0,400; teste 0,369). Ao ver que o ajuste piorava a validação, a versão de fábrica entrou como candidata. Essa mudança foi motivada pela validação, mas o teste daquela rodada já tinha sido calculado. Fica registrado.
+![Teste](graficos/04_teste_minutos_e_matriz.png)
 
-### Limiar de decisão (pergunta 3 do e-mail)
+| Modelo | PR-AUC | Min. perdidos (de 251) | Economia | Economia se TP=1 | Alarmes / 100 | Recall | Precisão |
+|---|---|---|---|---|---|---|---|
+| **OFICIAL** | **0,567** | **131** | **48%** | 22% | 29 | 76% | 39% |
+| Reserva (sem o cestão 1) | 0,443 | 165 | 34% | 15% | 24 | 65% | 39% |
+| 5 HGB, histórico lag2 | 0,436 | 148 | 41% | 18% | 24 | 68% | 41% |
+| RF 6 features (antigo) | 0,404 | 186 | 26% | 14% | 29 | 69% | 35% |
+| Regra do histórico | 0,358 | 147 | 41% | 20% | 25 | 72% | 41% |
 
-O limiar foi escolhido na validação, com no máximo 50% dos cestões em alarme. Esse teto é uma suposição nossa.
+No teste, o oficial deixa passar 18 das 75 cargas altas e dá 91 alarmes falsos.
 
-| Se a EVCOMX disser que… | Cenário | Limiar | Teste: recall | Teste: precisão | Alarmes / 100 cestões |
-|---|---|---|---|---|---|
-| carga alta não detectada é pior | não deixar passar (F2) | 0,41 | **76%** | 29% | 38 |
-| os dois erros pesam igual | equilíbrio (F1) | 0,54 | 63% | 34% | 27 |
-| alarme falso é pior | evitar alarme falso (F0,5) | 0,77 | 33% | 45% | 11 |
+**Transparência.** O teste foi aberto uma vez na otimização (31/out/2026), para os finalistas registrados antes. Este script refaz a mesma conta, com os mesmos números, e confere que o modelo re-treinado dá as **mesmas chances e os mesmos limiares** do pacote da otimização. O grupo já tinha visto este teste nas rodadas da RF; por isso nada foi escolhido olhando para ele.
 
-No teste há ~15 cargas altas a cada 100 cestões.
+A RF de 6 features aparece aqui com 0,404, treinada no dev inteiro (mesmo protocolo do oficial). No `historico_rf6/`, com treino só no treino, ela tinha 0,391.
 
-Como ler a primeira linha: a cada 100 cestões, o modelo dispara 38 alarmes. 11 deles são carga alta de verdade, e ele deixa passar 3 ou 4 das ~15.
-
-### Conferência no teste (jun–ago/2026, uma única vez)
-
-| | PR-AUC | ROC-AUC |
-|---|---|---|
-| **Plano A: Random Forest, 6 features** | **0,391** (IC 90%: 0,32–0,48) | 0,769 |
-| Plano B: Random Forest ajustada, 4 features sem histórico | 0,228 | 0,611 |
-| Baseline (maioria) | 0,146 | 0,500 |
-| Baseline físico: regra de volume (> 56,4 m³) | 0,149 | 0,521 |
-
-Na rodada anterior (corte só no peso zero, 9 features) o plano A tinha 0,354 no teste (IC 90%: 0,29–0,44). A melhora cabe no ruído: os dois intervalos se sobrepõem quase inteiros.
-
-**Sobre a comparação com a feature selection:** no README da feature selection, a regressão logística com 6 features teve PR-AUC 0,42 no teste.
-- **Isso não muda a escolha.** O teste não serve para escolher (slide 35), e 0,42 está dentro do intervalo do modelo escolhido.
-- **Mas é mais um sinal de instabilidade.** A validação (abr–jun) e o teste (jun–ago) não concordam sobre o melhor algoritmo. Com ~75–90 cargas altas em cada conjunto, as diferenças entre os melhores modelos estão dentro do ruído.
-
-### Explicação do modelo (gráficos 07 e 08)
-
-- **Permutação na validação.** As features mais importantes são `taxa_ca_ult5`, `prop_peso_pesado`, `peso_por_ciclo_t`, `taxa_ca_ult10` e `densidade_media`, as mesmas da feature selection; `prop_PACB` contribui pouco.
-- **Fluxograma para a apresentação.** O gráfico 08 traz uma árvore de 3 perguntas: densidade, proporção de pesado e carga alta recente. Ela é mais fraca que o modelo (PR-AUC 0,25 contra 0,43), mas mostra a lógica de um jeito que o pátio entende.
-
-### O que depende das respostas da EVCOMX
+### O que depende da EVCOMX
 
 | Pergunta | O que muda aqui |
 |---|---|
-| 1. O que mudou em maio/2026? | Se foi mudança permanente, re-treinar só com dados de maio em diante, ou dar mais peso a eles. Se foi critério de registro, rever o alvo. |
-| ~~2. Camadas de 10 kg são "gancho que não pegou"?~~ | **Respondida:** sim, e o corte passa a ser 2.000 kg. Aplicado no `transforma_dataset.py`; todas as etapas rodaram de novo (esta rodada). |
-| 3. Qual erro é pior? | Escolhe um dos três limiares da tabela acima. |
-| **(não perguntada)** O resultado da corrida anterior está disponível na hora de prever? | Decide entre o plano A (PR-AUC 0,39 no teste) e o plano B (0,23). **É a decisão com mais impacto no desempenho; vale perguntar.** |
+| O alarme certo também custa 1 min? O reajuste evita a parada inteira? | Escolhe entre os dois limiares (0,18 ou 0,30). A economia no teste vai de 48% para 22% |
+| Quantos alarmes por dia o pátio aguenta? | Hoje são ~3,7 por dia no teste. Um teto muda o limiar |
+| O que mudou em maio/2026? | Se foi permanente, dar mais peso aos meses recentes (na otimização, não ajudou) |
 
 ### Limitações
 
-- **Validação e teste pequenos.** São ~515 cestões cada, com 75–90 cargas altas. Diferenças de PR-AUC menores que ~0,08 não são confiáveis (ver os IC 90%).
-- **Modelo para uso.** Foi re-treinado em treino + validação; a análise de modelos o mede no teste (o teste vem depois dos dois). Os limiares vêm da validação e não se transferem bem para o modelo re-treinado (ver a análise): rever assim que houver dados novos.
-- **Limiares sem arredondar.** O `modelo_final.json` guardava os limiares com 4 casas, e 3 cestões da validação ficavam entre o valor arredondado e o exato (verificação, item 1.5b). Agora os limiares são salvos inteiros, no `.json` e dentro do `.joblib`.
-- **Versão do scikit-learn.** Os números podem mudar um pouco com outra versão (aqui: 1.9.1).
+- **Teste pequeno:** 75 cargas altas. Diferenças de minutos menores que ~40 min e de PR-AUC menores que ~0,08 não são confiáveis (ver o bootstrap na análise).
+- **Muitas configurações no dev (168).** O melhor resultado do dev tende a ser otimista; por isso a média de 5 e a regra declarada antes.
+- **"Minutos evitados" supõe que o alarme certo evita a parada inteira.** É o teto do ganho (verificação, seção 6.4).
+- **scikit-learn 1.9.1.** Com outra versão, os números podem mudar um pouco.

@@ -1,0 +1,5 @@
+etapa,cestões,corridas
+original_dataset/infos_camadas.csv (cestões 1 e 2),3501,1799
+EDA/base.csv (limpa; cestões 1 e 2),3501,1799
+original_dataset/VariavelResposta.csv (2 cestões por corrida),3598,1799
+feature_selection/dataset_features_completo.csv,3501,1799

@@ -1,6 +1,6 @@
 {
  "modelo": {
-  "arquivo": "otimizacao_minutos/modelo_minutos.joblib",
+  "arquivo": "selecao_algoritmos/modelo_final.joblib",
   "descricao": "média de 5 HistGradientBoosting, 120 features + resultado do cestão 1",
   "n_features": 120
  },

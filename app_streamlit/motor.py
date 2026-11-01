@@ -1,7 +1,7 @@
 """
 Motor do simulador: transforma a receita da corrida (camadas de cada cestão + gusa
 líquida) e o "momento do forno" nas 120 features do modelo escolhido do projeto
-(otimizacao_minutos/modelo_minutos.joblib: média de 5 HistGradientBoosting) e
+(selecao_algoritmos/modelo_final.joblib: o modelo oficial, média de 5 HistGradientBoosting) e
 devolve a chance de carga alta de cada cestão.
 
 De onde vem cada grupo de features:
@@ -32,7 +32,7 @@ import pandas as pd
 
 PASTA_APP = Path(__file__).resolve().parent
 RAIZ = PASTA_APP.parent
-CAMINHO_MODELO = RAIZ / "otimizacao_minutos" / "modelo_minutos.joblib"
+CAMINHO_MODELO = RAIZ / "selecao_algoritmos" / "modelo_final.joblib"
 PASTA_DADOS = PASTA_APP / "dados_app"
 
 CAPACIDADE_M3 = 78.0          # volume do cestão (EVCOMX)

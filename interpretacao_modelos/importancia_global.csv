@@ -1,7 +1,122 @@
-,"feature_importances_ (impureza, treino)",permutação no teste (queda PR-AUC),permutação: desvio,|coef| logística padronizada,valores distintos no treino,posição: impureza,posição: permutação,posição: logística,SHAP médio |valor| (teste),posição: SHAP,Saabas médio |valor| (teste),"correlação SHAP × Saabas, cestão a cestão"
-densidade_media,0.2721,0.0321,0.0162,0.2553,2986,2,3,3,0.0433,4,0.0527,0.8236
-prop_peso_pesado,0.273,0.011,0.0352,0.5146,2866,1,5,2,0.0792,1,0.0893,0.89
-peso_por_ciclo_t,0.1948,0.021,0.0271,0.1653,2501,3,4,5,0.0335,5,0.0748,0.872
-taxa_ca_ult5,0.1056,0.1187,0.0273,0.5503,6,5,1,1,0.0685,2,0.0888,0.9698
-taxa_ca_ult10,0.1113,0.0513,0.0253,0.1161,11,4,2,6,0.0535,3,0.0972,0.957
-prop_PACB,0.0432,0.0052,0.0042,0.2172,501,6,6,4,0.017,6,0.0268,0.8744
+,grupo,|SHAP| médio,permutação no teste (queda PR-AUC),posição SHAP,posição permutação
+gusl_t,gusa líquida,0.3851937804931897,0.0036383907846388786,1,18
+h_ewm2,histórico do forno,0.2312098883381084,0.08168754009884141,2,2
+h_taxa_8h,histórico do forno,0.21221536993694254,0.008233911056013232,3,10
+prop_peso_pesado,"massa, volume e densidade",0.16197578540324847,0.01967055672090212,4,3
+carga_alta_c1,resultado do cestão 1,0.16036013243583425,0.14367248423009432,5,1
+dia_semana,tempo e turno,0.14938060865191083,0.002237933413038862,6,23
+razao_vol_peso,"massa, volume e densidade",0.1415479424071027,0.003764196111298257,7,17
+h_taxa50,histórico do forno,0.13252722247749268,-0.016069516129128325,8,121
+h_n_corridas_24h,ritmo do forno,0.13250564405714924,0.009741293203342915,9,8
+rendimento_medio,"massa, volume e densidade",0.12038080482249351,0.0022472587351793027,10,22
+rel_prop_peso_pesado,regime recente (rel_),0.10399614249317601,0.005044055396198876,11,13
+h_taxa_24h,histórico do forno,0.10075202204146289,0.004982305025664968,12,14
+energia_por_ton,"massa, volume e densidade",0.09114178043915243,-0.0015625416313479023,13,101
+prop_PAEP,materiais (prop_<código>),0.08821040067342555,0.0035880906433554795,14,19
+rel_peso_por_ciclo_t,regime recente (rel_),0.0859623783000395,0.012896223789091898,15,5
+h_n_corridas_8h,ritmo do forno,0.08418748243256467,0.004850695767064694,16,15
+h_ewm5,histórico do forno,0.07364398398836844,0.010010075987712374,17,7
+tempo_montagem_min,tempo e turno,0.07293264795977124,0.0038051910401372124,18,16
+peso_x_hhi,"massa, volume e densidade",0.0709408888476313,0.011242506761780202,19,6
+intervalo_medio_min,tempo e turno,0.07054918512860929,-0.0016419785174930368,20,104
+max_bloco_misto_m3,"ordem, ciclos e posição",0.06466400653529054,0.0021234189102183,21,25
+rel2_peso_t_total,regime recente (rel_),0.06219207316925377,-0.005284676675998234,22,119
+taxa_ca_ult20,histórico do forno,0.06048949694604334,0.005128567083795432,23,12
+rel_densidade_media,regime recente (rel_),0.057939363383612594,-0.00031185696887436887,24,82
+prop_OXIC,materiais (prop_<código>),0.05737863504119903,0.002330582417138305,25,21
+pos_media_pesado,"ordem, ciclos e posição",0.05632752124405634,0.00355238364522672,26,20
+h_min_parada10,histórico do forno,0.056237198500045424,0.015956058836205367,27,4
+rel2_peso_por_ciclo_t,regime recente (rel_),0.04948973781928379,0.0020469502060003197,28,26
+gap_c2ant_c1_min,ritmo do forno,0.045456201408157405,-0.010476535165276446,29,120
+peso_pesado,"massa, volume e densidade",0.04453812818130901,-0.001376298292033451,30,97
+prop_RETL,materiais (prop_<código>),0.0405788471095971,-0.002560052970400606,31,111
+rel_volume_m3_total,regime recente (rel_),0.039945769311578935,-0.0003196876711864638,32,83
+prop_ESPR,materiais (prop_<código>),0.03915911082483084,0.002124385507369708,33,24
+prop_leve_base,"ordem, ciclos e posição",0.03883002061186002,-0.003146310533974983,34,113
+prop_GUSS,materiais (prop_<código>),0.038767053979003305,-0.0014014134997143435,35,98
+volume_m3_total,"massa, volume e densidade",0.03782487769811305,0.009579708171706414,36,9
+vol_misto_m3,"massa, volume e densidade",0.03707516939378181,0.0016431160701891212,37,27
+prop_MISM,materiais (prop_<código>),0.03584176875865888,-0.0004996476040757258,38,86
+hora,tempo e turno,0.03520691448881781,-0.001968286264752872,39,107
+volume_c1_m3,contexto do cestão 1 (receita),0.034952422265549926,0.005138785039031179,40,11
+prop_vol_leve,"massa, volume e densidade",0.03418904248822085,-0.0015867677243440292,41,102
+prop_FOFO,materiais (prop_<código>),0.032656190571019476,0.0016000529681019283,42,29
+peso_max_camada_t,"massa, volume e densidade",0.029770981839007254,-0.003751713524789868,43,114
+prop_leve,"massa, volume e densidade",0.029051093522777703,-0.004135490952761489,44,117
+densidade_media,"massa, volume e densidade",0.029004589966529385,0.0006598895199292354,45,42
+prop_PACB,materiais (prop_<código>),0.027588294562998314,7.892211822455586e-05,46,55
+max_bloco_leve_m3,"ordem, ciclos e posição",0.025879621572197222,0.00036023354177601165,47,45
+peso_medio_camada_t,"massa, volume e densidade",0.02523948094602358,-0.0016697352985282298,48,105
+prop_CAVA,materiais (prop_<código>),0.025026729528357168,0.001035305361076433,49,36
+vol_acumulado_m3,contexto do cestão 1 (receita),0.024860832904898517,0.0011538680487176213,50,35
+peso_c1_t,contexto do cestão 1 (receita),0.023870541008557476,-0.001113706782336088,51,94
+gap_corrida_min,ritmo do forno,0.02304477238560919,-0.0009361961348685055,52,92
+peso_leve_topo_t,"ordem, ciclos e posição",0.022831610894790653,-0.0008235037726433525,53,90
+prop_SHRE,materiais (prop_<código>),0.022226447166687514,0.00018360769994631986,54,53
+hhi_materiais,materiais (prop_<código>),0.021913573845247537,-0.0021445506041081197,55,109
+pos_media_leve,"ordem, ciclos e posição",0.020994982324949375,-0.0017830635861079802,56,106
+prop_vol_misto,"massa, volume e densidade",0.02090340683312677,0.0008570914707292099,57,39
+rel2_prop_peso_pesado,regime recente (rel_),0.020506747622446964,-0.0012868135594428453,58,96
+peso_base_30pct_t,"ordem, ciclos e posição",0.019630468852567473,-7.810368814522572e-05,59,77
+rel2_n_ciclos,regime recente (rel_),0.0193854413531033,-0.0038874717365854792,60,115
+rel2_densidade_media,regime recente (rel_),0.01806456122229018,-0.0007972288677778217,61,88
+delta_peso_12_t,contexto do cestão 1 (receita),0.01767680319850925,0.0012353050809390752,62,33
+h_ult2_c2,histórico do forno,0.01651755132309696,-0.0012103204242613018,63,95
+vol_pesado_m3,"massa, volume e densidade",0.015227049632140308,0.0009911374432700405,64,38
+prop_vol_pesado,"massa, volume e densidade",0.01487456735852133,0.0007379306819555121,65,40
+taxa_ca_ult5,histórico do forno,0.01464887785651994,3.655356532046294e-05,66,56
+max_bloco_pesado_m3,"ordem, ciclos e posição",0.01369914990055433,-0.0010289818728695054,67,93
+rel2_volume_m3_total,regime recente (rel_),0.013660495302886865,-0.0005211561844939538,68,87
+n_blocos_misto,"ordem, ciclos e posição",0.0126992880139978,0.0009982698293407033,69,37
+prop_peso_misto,"massa, volume e densidade",0.011753585183655943,-0.00044840282675933095,70,84
+rel_peso_t_total,regime recente (rel_),0.011730509797112225,0.0015821344547009898,71,31
+prop_outros,materiais (prop_<código>),0.011439695223135404,0.0003275092170123894,72,49
+peso_t_total,"massa, volume e densidade",0.01134728736974234,-3.690750765881212e-05,73,76
+h_taxa3,histórico do forno,0.010906234743987239,0.0015866769579861773,74,30
+peso_leve,"massa, volume e densidade",0.01010219667660182,-0.00450377041495067,75,118
+h_ult1_c1,histórico do forno,0.010050018454450872,-0.0025405263405569034,76,110
+prop_RECA,materiais (prop_<código>),0.00979301034534756,-0.004048785963635271,77,116
+energia_estimada_mwh,"massa, volume e densidade",0.008597505811446261,0.0005265576229866786,78,43
+prop_leve_topo,"ordem, ciclos e posição",0.008463581098419954,-0.0015525093434513026,79,100
+turno_B,tempo e turno,0.007931560252547976,-0.000879705133547426,80,91
+taxa_ca_ult10,histórico do forno,0.007287733747088114,0.0016191246481545908,81,28
+vol_leve_m3,"massa, volume e densidade",0.006894407097752097,-0.0014268925122887578,82,99
+prop_SUGU,materiais (prop_<código>),0.006048115407315291,-0.0001382175125251406,83,79
+rel_n_ciclos,regime recente (rel_),0.005112337706769474,0.0006913522438243503,84,41
+prop_194032,materiais (prop_<código>),0.005007523652825292,-0.0004516436789310241,85,85
+rel_prop_leve,regime recente (rel_),0.004841885285316641,-0.00020452655600156078,86,80
+h_ewm15,histórico do forno,0.004776048758237829,0.00024826578116017296,87,52
+peso_por_ciclo_t,"ordem, ciclos e posição",0.004543590329188238,0.0013785709802126788,88,32
+num_materiais,materiais (prop_<código>),0.004097395487136511,-0.002923040450367509,89,112
+peso_topo_30pct_t,"ordem, ciclos e posição",0.0038906931955356274,-0.0019766488468297093,90,108
+prop_MISB,materiais (prop_<código>),0.003351601586506597,-3.137497634382313e-05,91,75
+prop_ESPS,materiais (prop_<código>),0.0027938875215246994,-0.0002660922556205758,92,81
+peso_misto,"massa, volume e densidade",0.0022429313670495436,0.00032878117964025845,93,48
+vol_x_prop_leve,"massa, volume e densidade",0.0021850818893619744,0.0002536286947266708,94,51
+h_desde_ultima,histórico do forno,0.0020540637676291396,0.00027484866860727486,95,50
+rel2_prop_leve,regime recente (rel_),0.0018218589169340348,-0.001634532205269923,96,103
+prop_CAFO,materiais (prop_<código>),0.0017537770694814306,-0.00012150174368787958,97,78
+n_ciclos_LPM,"ordem, ciclos e posição",0.0011257770757272436,0.0003382953279610579,98,46
+turno_A,tempo e turno,0.0009298426145758422,-0.000812641600314179,99,89
+num_camadas,"ordem, ciclos e posição",0.0007033153127199228,0.0012105350121775827,100,34
+prop_118441,materiais (prop_<código>),0.0006045116086513398,0.00033659689738776424,101,47
+h_taxa10,histórico do forno,0.00027483641356029667,0.0003751830123046362,102,44
+n_blocos,"ordem, ciclos e posição",0.00025952580122427235,0.00012121212121209978,103,54
+ocupacao_cestao,"massa, volume e densidade",0.0,0.0,112,65
+num_baias,materiais (prop_<código>),0.0,0.0,112,65
+topo_pesado,"ordem, ciclos e posição",0.0,0.0,112,65
+topo_misto,"ordem, ciclos e posição",0.0,0.0,112,65
+fundo_misto,"ordem, ciclos e posição",0.0,0.0,112,65
+topo_leve,"ordem, ciclos e posição",0.0,0.0,112,65
+fundo_leve,"ordem, ciclos e posição",0.0,0.0,112,65
+n_ciclos,"ordem, ciclos e posição",0.0,0.0,112,65
+n_blocos_leve,"ordem, ciclos e posição",0.0,0.0,112,65
+violacao_regra,"ordem, ciclos e posição",0.0,0.0,112,65
+h_taxa5,histórico do forno,0.0,0.0,112,65
+carga3_solida_t,gusa líquida,0.0,0.0,112,65
+tem_gusl,gusa líquida,0.0,0.0,112,65
+mudou_composicao,contexto do cestão 1 (receita),0.0,0.0,112,65
+eh_cestao_2,contexto do cestão 1 (receita),0.0,0.0,112,65
+fim_de_semana,tempo e turno,0.0,0.0,112,65
+h_taxa20,histórico do forno,0.0,0.0,112,65
+h_ult1,histórico do forno,0.0,0.0,112,65

@@ -16,6 +16,7 @@
 #   ITEM 6 - Análise bivariada
 #   ITEM 7 - Padrões temporais
 #   ITEM 8 - Dicionário de materiais
+#   ITEM 9 - Os sinais que o modelo oficial usa (histórico, gusa líquida, cestão 1 → cestão 2)
 # =====================================================================
 #%%
 import os
@@ -933,3 +934,76 @@ print(pesado[pesado["Densidade t/m3"] <= 2.50][["cd_codigo_material", "Densidade
 # ---------- Insumos CAL/COQUE: já resolvido, só documentando ----------
 print("\nOcorrências de CAL/COQUE no base.csv:",
       base["cd_codigo_material"].isin(["7071955", "8800022", "7071940"]).sum())
+
+
+
+# =====================================================================
+# ITEM 9 — OS SINAIS QUE O MODELO OFICIAL USA
+# O modelo oficial do projeto (média de 5 Gradient Boosting, 121 features; ver
+# selecao_algoritmos/) se apoia muito em três informações que NÃO estão na receita do
+# cestão. Antes de modelar, vale ver nos dados brutos que elas existem e o tamanho delas:
+#   1. histórico do forno: carga alta puxa carga alta;
+#   2. gusa líquida (carregamento 3): corridas sem gusa quase não dão carga alta;
+#   3. resultado do cestão 1: quando ele dá carga alta, o cestão 2 da mesma corrida dá MENOS.
+# (Antes, o modelo era uma Random Forest com 6 features, quase só de receita + histórico.)
+# =====================================================================
+
+#%%
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+os.makedirs("graficos", exist_ok=True)
+AZUL, VERMELHO, CINZA, LARANJA = "#2b6cb0", "#c0392b", "#7f8c8d", "#dd8a2e"
+base = pd.read_csv("base.csv")
+resposta = pd.read_csv("VariavelResposta.csv")
+base["dt_hora_consumo"] = pd.to_datetime(base["dt_hora_consumo"], utc=True, format="mixed")
+
+# ordem das corridas pelo início do cestão 1 (só corridas com receita registrada)
+inicio = base[base.nu_carregamento == 1].groupby("cd_corrida")["dt_hora_consumo"].min()
+corr = resposta.set_index("cd_corrida").loc[resposta.cd_corrida.isin(inicio.index).values].copy()
+corr["inicio"] = inicio.reindex(corr.index)
+corr = corr.sort_values("inicio")
+
+# 1) histórico: nº de cargas altas nas 5 corridas ANTERIORES (shift(1): nunca a atual)
+corr["ca_ult5"] = corr["is_carga_alta"].shift(1).rolling(5, min_periods=5).sum()
+hist = corr.dropna(subset=["ca_ult5"]).groupby("ca_ult5")["is_carga_alta"].agg(["mean", "size"])
+print("Taxa de carga alta da corrida conforme o nº de cargas altas nas 5 anteriores:")
+print(hist.round(3))
+apos = corr["is_carga_alta"].shift(1)
+print(f"Depois de uma corrida com carga alta: {corr.is_carga_alta[apos == 1].mean():.0%}; "
+      f"depois de uma sem: {corr.is_carga_alta[apos == 0].mean():.0%}")
+
+# 2) gusa líquida da corrida
+gusa = base[(base.nu_carregamento == 3) & (base.cd_codigo_material == "GUSL")].groupby("cd_corrida")["qt_peso_carregamento"].sum() / 1000
+corr["gusa_t"] = gusa.reindex(corr.index).fillna(0)
+corr["faixa_gusa"] = pd.cut(corr.gusa_t, [-0.1, 0.1, 30, 35, 40, 100], labels=["sem gusa", "até 30 t", "30–35 t", "35–40 t", "> 40 t"])
+g_gusa = corr.groupby("faixa_gusa", observed=True)["is_carga_alta"].agg(["mean", "size"])
+print("\nTaxa de carga alta da corrida por quantidade de gusa líquida:")
+print(g_gusa.round(3))
+
+# 3) cestão 1 → cestão 2
+c2 = corr.dropna(subset=["is_carga_alta_carregamento_2"])
+c12 = c2.groupby("is_carga_alta_carregamento_1")["is_carga_alta_carregamento_2"].agg(["mean", "size"])
+print("\nTaxa de carga alta do cestão 2 conforme o cestão 1 da mesma corrida:")
+print(c12.round(3))
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 4.3))
+b = axes[0].bar(hist.index.astype(int).astype(str), 100 * hist["mean"], color=VERMELHO)
+axes[0].bar_label(b, labels=[f"{100 * v:.0f}%" for v in hist["mean"]], padding=2, fontsize=9)
+axes[0].set_xlabel("cargas altas nas 5 corridas anteriores"); axes[0].set_ylabel("% de corridas com carga alta")
+axes[0].set_title("1. Carga alta puxa carga alta\n(histórico do forno)", loc="left", fontweight="bold")
+b = axes[1].bar(g_gusa.index.astype(str), 100 * g_gusa["mean"], color=[CINZA] + [LARANJA] * (len(g_gusa) - 1))
+axes[1].bar_label(b, labels=[f"{100 * v:.0f}%\n({n})" for v, n in zip(g_gusa["mean"], g_gusa["size"])], padding=2, fontsize=8)
+axes[1].set_xlabel("gusa líquida na corrida (carregamento 3)")
+axes[1].set_title("2. Sem gusa líquida,\nquase não há carga alta", loc="left", fontweight="bold")
+b = axes[2].bar(["cestão 1 NÃO deu", "cestão 1 deu"], 100 * c12["mean"].values, color=[AZUL, VERMELHO])
+axes[2].bar_label(b, labels=[f"{100 * v:.0f}%\n({n} corridas)" for v, n in zip(c12["mean"], c12["size"])], padding=2, fontsize=9)
+axes[2].set_ylabel("% de cestões 2 com carga alta")
+axes[2].set_title("3. Se o cestão 1 deu carga alta,\no cestão 2 dá MENOS", loc="left", fontweight="bold")
+for ax in axes:
+    ax.set_ylim(0, ax.get_ylim()[1] * 1.15)
+plt.tight_layout()
+plt.savefig("graficos/14_sinais_do_modelo_oficial.png", dpi=130)
+plt.close()

@@ -1,0 +1,5 @@
+onde,PR-AUC
+treino (o próprio),0.9407096364187383
+"walk-forward (dev, nov–jun)",0.5001383637747585
+validação (treino → abr–jun),0.44963343958788754
+teste (dev → jun–ago),0.5669906200483359

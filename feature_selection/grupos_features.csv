@@ -1,0 +1,11 @@
+grupo,n_features,o_que_e,quando_esta_disponivel,queda_PR-AUC_permutacao_grupo,Δ_min_sem_o_grupo_WF,Δ_PR-AUC_sem_o_grupo_WF
+"massa, volume e densidade",24,"peso, volume estimado (peso ÷ densidade do material), densidade média, peso/volume por classe, rendimento, energia típica e interações",após a montagem do cestão (pesagem das camadas),0.071,-16.5,-0.021
+"ordem, ciclos e posição",23,"blocos e ciclos leve→pesado→misto, maior bloco, o que está no fundo/topo e nos 30% de baixo/cima, posição média",após a montagem do cestão (sequência das camadas),-0.009,12.9,0.009
+materiais (prop_<código>),21,"proporção em peso de cada material comum (≥ 5% dos cestões do treino), nº de materiais e baias, concentração (HHI)",após a montagem do cestão,0.011,-29.6,0.002
+tempo e turno,7,"tempo de montagem, intervalo entre camadas, hora, turno, dia da semana",após a montagem do cestão,0.023,7.3,-0.004
+contexto do cestão 1 (receita),6,"no cestão 2: volume e peso do cestão 1, volume acumulado, diferença de peso, se a composição mudou","no cestão 2, a receita do cestão 1 já é conhecida; no cestão 1 vale 0",0.0,-18.0,0.004
+histórico do forno,18,"taxa de carga alta nas últimas 3–50 corridas, médias exponenciais, última corrida e seus cestões, corridas desde a última carga alta, minutos parados nas últimas 10, taxa nas últimas 8 h e 24 h",quando a corrida anterior termina (shift(1); versão _lag2 pula a anterior),0.139,86.6,-0.081
+gusa líquida,3,toneladas de gusa líquida (GUSL) e de carga sólida no carregamento 3 da corrida,na programação da corrida (carregamento 3),0.045,9.0,-0.015
+ritmo do forno,4,minutos desde o início da corrida anterior e desde o fim do cestão 2 dela; nº de corridas nas últimas 8 h e 24 h,no início da montagem (horários das corridas anteriores),0.009,-4.6,0.001
+regime recente (rel_),14,a feature menos a média dos 100 cestões anteriores (rel_) ou dos 60 do mesmo número de cestão (rel2_),após a montagem (média das features dos cestões anteriores; nunca o alvo),-0.011,25.1,0.011
+resultado do cestão 1,1,no cestão 2: 1 se o cestão 1 da mesma corrida deu carga alta; no cestão 1 vale 0,no cestão 2: confirmado pela EVCOMX em 31/out/2026; no cestão 1 vale 0,0.068,5.4,-0.077

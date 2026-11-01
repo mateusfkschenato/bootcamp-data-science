@@ -1,0 +1,4 @@
+lote,cestões,cargas altas,taxa,PR-AUC,PR-AUC IC90 baixo,C1 acima do chute,PR-AUC regra,% sorteios RF vence a regra,C2 não perde para a regra,recall c/ 40 alarmes/100,C3 recall no orçamento,taxa real por faixa,cestões por faixa,C4 faixas em ordem,C5 supera a regra (desejável),mínimo para usar (C1–C4)
+validação (onde foi escolhido; otimista),513,92,0.1793372319688109,0.4272844782132055,0.3476140142788094,True,0.33717775466317523,98.5,True,0.6847826086956522,False,8% | 17% | 27% | 62%,272 | 84 | 118 | 39,True,True,False
+"teste, RF treinada só no treino",515,75,0.14563106796116504,0.39120921842704315,0.3116738453706152,True,0.357512106861942,77.7,True,0.7733333333333333,True,6% | 17% | 26% | 45%,317 | 58 | 85 | 55,True,False,True
+"teste, RF para uso (treino + validação)",515,75,0.14563106796116504,0.40375149287956513,0.3335833758032294,True,0.357512106861942,87.5,True,0.8133333333333334,True,6% | 21% | 29% | 49%,340 | 67 | 63 | 45,True,False,True

@@ -25,10 +25,11 @@ import numpy as np, pandas as pd
 from sklearn.ensemble import HistGradientBoostingClassifier
 warnings.filterwarnings("ignore")
 AQUI = Path(__file__).resolve().parent
-D = pd.read_csv(AQUI / "dataset_minutos.csv")
+RAIZ = AQUI.parent
+D = pd.read_csv(RAIZ / "feature_selection" / "dataset_features_completo.csv")   # o mesmo dataset_minutos.csv de antes
 D["t_ini"] = pd.to_datetime(D.t_ini, utc=True, format="mixed"); D["min_parada"] = D.min_parada.fillna(0)
 D = D.sort_values("t_ini").reset_index(drop=True)
-F = json.load(open(AQUI / "features_finais.json", encoding="utf-8"))["features_principal"] + ["carga_alta_c1"]
+F = json.load(open(RAIZ / "feature_selection" / "features_finais.json", encoding="utf-8"))["features_oficial"]
 VAR = [dict(l2=5.0), dict(lr=0.05, l2=5.0), dict(leaves=16, l2=5.0), dict(leaf=20, l2=5.0), dict(it=150, l2=5.0)]
 H = lambda lr=0.03, it=300, leaves=8, leaf=40, l2=1.0: HistGradientBoostingClassifier(
     learning_rate=lr, max_iter=it, max_leaf_nodes=leaves, min_samples_leaf=leaf, l2_regularization=l2, random_state=42)

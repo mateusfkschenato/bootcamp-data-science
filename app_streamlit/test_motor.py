@@ -17,14 +17,14 @@ EXECUCAO = ["num_baias", "tempo_montagem_min", "intervalo_medio_min"]
 
 def _dados():
     mats, cfg, mom, pac = motor.carregar_materiais(), motor.carregar_config(), motor.carregar_momentos(), motor.carregar_modelo()
-    dm = pd.read_csv(RAIZ / "otimizacao_minutos" / "dataset_minutos.csv").set_index(["cd_corrida", "nu_carregamento"])
+    dm = pd.read_csv(RAIZ / "feature_selection" / "dataset_features_completo.csv").set_index(["cd_corrida", "nu_carregamento"])
     base = pd.read_csv(RAIZ / "EDA" / "base.csv", dtype={"cd_codigo_material": str})
     cam = base[base.nu_carregamento.isin([1, 2])].sort_values(["cd_corrida", "nu_carregamento", "nu_camada"])
     return mats, cfg, mom, pac, dm, cam
 
 
-def test_120_features_iguais_ao_dataset_minutos():
-    """Para 400 corridas reais: receita + momento da própria corrida = linha do dataset_minutos.csv."""
+def test_120_features_iguais_ao_dataset_de_modelagem():
+    """Para 400 corridas reais: receita + momento da própria corrida = linha do feature_selection/dataset_features_completo.csv."""
     mats, cfg, mom, pac, dm, cam = _dados()
     F = pac["com_cestao1"]["features"]
     ids = mom.sample(400, random_state=0).index

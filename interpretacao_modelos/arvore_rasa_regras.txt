@@ -1,25 +1,25 @@
-Árvore de 3 níveis (treino + validação, pesos balanceados). class: 1 = carga alta prevista.
-PR-AUC no teste = 0.314 (Random Forest: 0.404)
+Árvore de 3 níveis treinada para IMITAR as chances do modelo oficial no dev (value = chance média prevista)
+Fidelidade no teste: R² 0.62; mesma decisão de alarme em 83% dos cestões
 
-|--- densidade_media <= 0.900
-|   |--- taxa_ca_ult5 <= 0.300
-|   |   |--- prop_peso_pesado <= 0.200
-|   |   |   |--- class: 1
-|   |   |--- prop_peso_pesado >  0.200
-|   |   |   |--- class: 0
-|   |--- taxa_ca_ult5 >  0.300
-|   |   |--- prop_peso_pesado <= 0.159
-|   |   |   |--- class: 1
-|   |   |--- prop_peso_pesado >  0.159
-|   |   |   |--- class: 1
-|--- densidade_media >  0.900
-|   |--- prop_peso_pesado <= 0.375
-|   |   |--- peso_por_ciclo_t <= 14.329
-|   |   |   |--- class: 0
-|   |   |--- peso_por_ciclo_t >  14.329
-|   |   |   |--- class: 0
-|   |--- prop_peso_pesado >  0.375
-|   |   |--- densidade_media <= 0.930
-|   |   |   |--- class: 0
-|   |   |--- densidade_media >  0.930
-|   |   |   |--- class: 0
+|--- prop_peso_pesado <= 0.20
+|   |--- h_ewm2 <= 0.48
+|   |   |--- h_n_corridas_24h <= 9.50
+|   |   |   |--- value: [0.29]
+|   |   |--- h_n_corridas_24h >  9.50
+|   |   |   |--- value: [0.09]
+|   |--- h_ewm2 >  0.48
+|   |   |--- carga_alta_c1 <= 0.50
+|   |   |   |--- value: [0.70]
+|   |   |--- carga_alta_c1 >  0.50
+|   |   |   |--- value: [0.23]
+|--- prop_peso_pesado >  0.20
+|   |--- h_ewm2 <= 0.40
+|   |   |--- densidade_media <= 0.90
+|   |   |   |--- value: [0.10]
+|   |   |--- densidade_media >  0.90
+|   |   |   |--- value: [0.03]
+|   |--- h_ewm2 >  0.40
+|   |   |--- gusl_t <= 27.90
+|   |   |   |--- value: [0.04]
+|   |   |--- gusl_t >  27.90
+|   |   |   |--- value: [0.26]

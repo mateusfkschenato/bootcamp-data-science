@@ -1,0 +1,9 @@
+modelo,contra,dif PR-AUC,IC90 PR-AUC,dif minutos,IC90 minutos,% sorteios em que ganha nos minutos
+OFICIAL: 5 HGB + cestão 1,RF 6 features (antigo),0.15853643473001666,[0.075 0.236],-55.01295000000001,[-104.6  -13.5],99.1
+Reserva: 5 HGB sem cestão 1,RF 6 features (antigo),0.042623816451698875,[-0.011  0.101],-20.022808333333334,[-64.1  20. ],78.45
+"5 HGB, histórico lag2",RF 6 features (antigo),0.03553589826669592,[-0.021  0.099],-38.03845833333333,[-89.9   9. ],90.75
+Regra do histórico,RF 6 features (antigo),-0.053223198799972275,[-0.142  0.023],-38.11545,[-76.4  -7.1],98.65
+OFICIAL: 5 HGB + cestão 1,Regra do histórico,0.21175963352998892,[0.105 0.315],-16.897500000000004,[-59.1  20.5],73.7
+Reserva: 5 HGB sem cestão 1,Regra do histórico,0.09584701525167114,[0.019 0.186],18.092641666666665,[-5.6 45.7],11.05
+"5 HGB, histórico lag2",Regra do histórico,0.0887590970666682,[0.005 0.182],0.07699166666666883,[-43.1  37.9],47.65
+RF 6 features (antigo),Regra do histórico,0.053223198799972275,[-0.023  0.142],38.11545,[ 7.1 76.4],1.35

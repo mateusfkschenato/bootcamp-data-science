@@ -38,7 +38,7 @@ A fonte é a **Bai Jamjuree**, carregada do Google Fonts (precisa de internet; s
 
 ## Que modelo é esse
 
-É o **modelo escolhido na etapa de otimização por minutos**: `otimizacao_minutos/modelo_minutos.joblib`, a média das probabilidades de 5 `HistGradientBoostingClassifier`, com 120 features + o resultado do cestão 1. No teste (24/jun a 4/ago/2026): PR-AUC 0,57 e 131 min de forno perdidos, contra 251 min sem modelo. O pacote é carregado uma vez só, com `@st.cache_resource`.
+É o **modelo oficial do projeto**: `selecao_algoritmos/modelo_final.joblib`, a média das probabilidades de 5 `HistGradientBoostingClassifier`, com 120 features + o resultado do cestão 1. No teste (24/jun a 4/ago/2026): PR-AUC 0,57 e 131 min de forno perdidos, contra 251 min sem modelo. O pacote é carregado uma vez só, com `@st.cache_resource`.
 
 | Grupo de features | Quantas | De onde o app tira |
 |---|---|---|
@@ -58,7 +58,7 @@ No app:
 
 O alarme dispara quando a chance passa do **limiar de minutos** que o pacote guarda (`limiar_minutos_TP0` ou `TP1`). Não é 50%: com parada média de ~3,9 min e alarme de 1 min, alarmar compensa bem antes disso.
 
-**Conferência.** O `test_motor.py` monta, para 400 corridas reais, a receita e o momento da própria corrida, e confere que as 120 features batem com o `dataset_minutos.csv`. A única diferença é `num_camadas` em poucos cestões, em que os dados têm duas camadas com o mesmo número; no app, cada camada conta. Rodando em todas as 3.372 corridas com momento completo, também bate. Estimar baias e tempo de montagem muda a chance em 1,1 ponto percentual em média e troca o alarme em 2% dos cestões.
+**Conferência.** O `test_motor.py` monta, para 400 corridas reais, a receita e o momento da própria corrida, e confere que as 120 features batem com o `feature_selection/dataset_features_completo.csv`. A única diferença é `num_camadas` em poucos cestões, em que os dados têm duas camadas com o mesmo número; no app, cada camada conta. Rodando em todas as 3.372 corridas com momento completo, também bate. Estimar baias e tempo de montagem muda a chance em 1,1 ponto percentual em média e troca o alarme em 2% dos cestões.
 
 ## Entradas recusadas
 
@@ -83,7 +83,7 @@ app_streamlit/
 ├── motor.py                # receita + momento → 120 features → chance (sem Streamlit; testável)
 ├── desenho.py              # SVG animado dos cestões e painel de resultado
 ├── preparar_dados_app.py   # gera dados_app/ a partir das etapas anteriores
-├── test_motor.py           # confere as features contra o dataset_minutos.csv
+├── test_motor.py           # confere as features contra o dataset de modelagem
 ├── dados_app/
 │   ├── materiais_app.csv   # 22 materiais: classe, densidade, rendimento, energia, camada típica
 │   ├── momentos.csv        # 1.686 momentos reais do forno (o app usa um; o teste usa 400)
@@ -96,6 +96,6 @@ Se o modelo ou as features mudarem, rode `python app_streamlit/preparar_dados_ap
 
 ## Publicar (bônus do exercício)
 
-O jeito mais simples é o **Streamlit Community Cloud**: suba o repositório para o GitHub, crie um app apontando para `app_streamlit/app.py` e ele usa o `requirements.txt` desta pasta. Para rodar, o app só precisa de `otimizacao_minutos/modelo_minutos.joblib` e da pasta `dados_app/`.
+O jeito mais simples é o **Streamlit Community Cloud**: suba o repositório para o GitHub, crie um app apontando para `app_streamlit/app.py` e ele usa o `requirements.txt` desta pasta. Para rodar, o app só precisa de `selecao_algoritmos/modelo_final.joblib` e da pasta `dados_app/`.
 
 Antes de publicar num link aberto, confirme com a EVCOMX: `dados_app/` vem dos dados reais deles.

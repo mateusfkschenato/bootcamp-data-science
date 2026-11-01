@@ -2,6 +2,14 @@
 
 Projeto final do bootcamp de ciência de dados, em parceria com a EVCOMX: um modelo de classificação que prevê se uma receita de cestão vai gerar **carga alta** no forno elétrico a arco (FEA) durante o carregamento de sucata.
 
+> **Atualização (nov/2026): a EDA e o modelo oficial.** O modelo oficial do projeto é a **média de 5 Gradient Boosting com 121 features** (ver `selecao_algoritmos/`). Ele se apoia muito em três informações que não estão na receita do cestão. A EDA ganhou o **ITEM 9** para mostrar, nos dados brutos, que elas existem e o tamanho delas (gráfico `14_sinais_do_modelo_oficial.png`). Os itens 1 a 8 não mudaram: a limpeza e o `base.csv` são os mesmos que alimentam todas as etapas. Antes, o modelo era uma Random Forest com 6 features (registro em `*/historico_rf6/`).
+>
+> | Sinal (ITEM 9) | O que os dados mostram |
+> |---|---|
+> | **Histórico do forno** | Com 0 cargas altas nas 5 corridas anteriores, 14% das corridas dão carga alta; com 5 de 5, **77%**. Depois de uma corrida com carga alta, 55%; depois de uma sem, 19% |
+> | **Gusa líquida** (carregamento 3) | Corridas **sem gusa: 4%** de carga alta; com 30–35 t, 34%; com 35–40 t, 45% |
+> | **Cestão 1 → cestão 2** | Quando o cestão 1 deu carga alta, o cestão 2 da mesma corrida dá **menos**: 10%, contra 18% quando o cestão 1 não deu |
+
 ### Como rodar
 
 O pipeline está dividido em dois arquivos, nessa ordem obrigatória:
@@ -39,7 +47,7 @@ Organizada pelos itens do checklist de EDA do bootcamp:
 | 6 — Análise bivariada | point-biserial, heatmap de correlação, peso x volume, posição da camada, **ciclos de montagem** (gráficos 12 e 13), comparação carregamento 1 x 2 |
 | 7 — Padrões temporais | taxa de carga alta por turno e dia da semana |
 | 8 — Dicionário de materiais | scatter densidade x energia, verificação da regra leve/pesado |
-| 9 — Fechamento | conclusões (a escrever) |
+| 9 — Sinais do modelo oficial | histórico do forno, gusa líquida e cestão 1 → cestão 2 (gráfico 14) |
 
 ### Decisões já tomadas (documentadas no código)
 
@@ -61,4 +69,4 @@ Organizada pelos itens do checklist de EDA do bootcamp:
 
 - Propriedades de RECC/RECG (sem densidade/energia/rendimento no dicionário): aguardando resposta do cliente.
 - 28 linhas com chave corrida+carregamento+camada repetida: precisa investigar antes de decidir o que fazer.
-- Escrever o fechamento (ITEM 9): principais conclusões, o que confirma ou contradiz o que o Guia da EVCOMX já descreve, e limitações dos dados a reportar pra EVCOMX.
+- Escrever o fechamento (ITEM 10): principais conclusões, o que confirma ou contradiz o que o Guia da EVCOMX já descreve, e limitações dos dados a reportar pra EVCOMX.
