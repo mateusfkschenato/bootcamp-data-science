@@ -32,10 +32,12 @@ st.set_page_config(page_title="Simulador de Carga Alta | EVCOMX", page_icon="�
 # ====================================================================== carga (uma vez só)
 @st.cache_resource
 def carregar():
-    return motor.carregar_modelo(), motor.carregar_materiais(), motor.carregar_config(), motor.carregar_momentos()
+    return (motor.carregar_modelo(), motor.carregar_materiais(), motor.carregar_config(), motor.carregar_momentos(),
+            motor.carregar_exemplos())
 
 
-PACOTE, MATS, CFG, MOMENTOS = carregar()
+PACOTE, MATS, CFG, MOMENTOS, EXEMPLOS = carregar()
+EXEMPLO_POR_NOME = {e["nome"]: e for e in EXEMPLOS}
 GUSA = CFG["gusa"]
 GUSA_PADRAO_T = 35.0      # número redondo perto da mediana real (34,3 t)
 MODOS = list(CFG["limiares"]["principal"])
@@ -75,7 +77,8 @@ def recombinar(receita, k, gusa_t, modo, momento_forno, resultado_c1):
 # ====================================================================== estado
 def _iniciar_estado():
     padrao = {"corrida": None, "ativo": 1, "anim": None, "erro": None, "n_corridas": 0, "modo": MODOS[0],
-              "momento_forno": MOMENTOS_FORNO[0], "resultado_c1": "Ainda não sei", "receita_antes": None}
+              "momento_forno": MOMENTOS_FORNO[0], "resultado_c1": "Ainda não sei", "receita_antes": None,
+              "exemplo_ativo": None}
     for k, v in padrao.items():
         if k not in st.session_state:
             st.session_state[k] = v
@@ -91,6 +94,7 @@ def _mudou_receita():
         ss.corrida["enviada"] = False
     ss.erro = None
     ss.receita_antes = None
+    ss.exemplo_ativo = None
 
 
 # ====================================================================== ações (callbacks)
@@ -102,6 +106,22 @@ def nova_corrida():
     ss.anim = {"tipo": "gusa"}
     ss.erro = None
     ss.receita_antes = None
+    ss.exemplo_ativo = None
+
+
+def carregar_exemplo(chave):
+    """Abre uma corrida pronta. O resultado só aparece em "Enviar corrida", como numa corrida normal."""
+    e = EXEMPLO_POR_NOME[ss[chave]]
+    ss.n_corridas += 1
+    ss.corrida = {"codigo": f"SIM-{ss.n_corridas:03d}", "cestoes": copy.deepcopy(e["cestoes"]), "gusa_t": e["gusa_t"],
+                  "enviada": False}
+    ss.ativo = 1
+    ss.anim = None
+    ss.erro = None
+    ss.receita_antes = None
+    ss.momento_forno = e["momento"]
+    ss.resultado_c1 = e["resultado_c1"]
+    ss.exemplo_ativo = e["nome"]
 
 
 def novo_cestao():
@@ -204,6 +224,7 @@ def descartar_corrida():
     ss.anim = None
     ss.erro = None
     ss.receita_antes = None
+    ss.exemplo_ativo = None
 
 
 # ====================================================================== estilo (identidade EVCOMX)
@@ -300,6 +321,18 @@ def abrir_aviso(mensagem):
     janela(corpo)()
 
 
+# ====================================================================== corridas de exemplo
+def seletor_exemplo(local):
+    """Campo para abrir uma corrida pronta. `local` separa a tela inicial da corrida aberta."""
+    chave = f"exemplo_{local}"
+    c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
+    with c1:
+        st.selectbox("Corrida de exemplo", list(EXEMPLO_POR_NOME), key=chave)
+    with c2:
+        st.button("Carregar exemplo", key=f"carregar_{local}", on_click=carregar_exemplo, args=(chave,),
+                  width="stretch")
+
+
 # ====================================================================== recombinação
 def mostrar_recombinacao(rec):
     """Bloco do "E agora?": até 3 mudanças na receita de um cestão que alarmou."""
@@ -373,6 +406,7 @@ if corrida is None:
 4. **Enviar corrida**: o modelo calcula a chance de cada cestão e diz se a corrida deve dar carga alta.
 """)
         st.button("➕  Nova corrida", type="primary", on_click=nova_corrida)
+        seletor_exemplo("inicio")
     st.stop()
 
 
@@ -402,6 +436,11 @@ with b3:
                         disabled=corrida["gusa_t"] is None)
 with b4:
     st.button("🗑️  Descartar corrida", on_click=descartar_corrida)
+
+# ---------- corrida de exemplo ----------
+seletor_exemplo("corrida")
+if ss.exemplo_ativo:
+    st.info(EXEMPLO_POR_NOME[ss.exemplo_ativo]["descricao"])
 
 # ---------- previsão (se a corrida já foi enviada) ----------
 pronta = n_cestoes > 0 and all(len(c) > 0 for c in cestoes)

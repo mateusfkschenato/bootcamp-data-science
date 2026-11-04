@@ -60,6 +60,11 @@ def carregar_momentos() -> pd.DataFrame:
     return pd.read_csv(PASTA_DADOS / "momentos.csv").set_index("cd_corrida")
 
 
+def carregar_exemplos() -> list[dict]:
+    """Corridas prontas para demonstração: receitas reais do período de teste."""
+    return json.loads((PASTA_DADOS / "exemplos_corrida.json").read_text(encoding="utf-8"))
+
+
 def carregar_modelo(caminho: Path = CAMINHO_MODELO) -> dict:
     # Só abrir arquivos de modelo confiáveis: joblib pode executar código ao carregar.
     return joblib.load(caminho)

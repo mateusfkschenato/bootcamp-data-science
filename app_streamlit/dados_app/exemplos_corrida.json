@@ -1,0 +1,271 @@
+[
+ {
+  "nome": "1. Corrida segura",
+  "corrida_real": "O6748",
+  "momento": "Forno típico",
+  "resultado_c1": "Ainda não sei",
+  "alarme": false,
+  "descricao": "Receita real (O6748), que não deu carga alta na fábrica. Em um forno típico, os dois cestões ficam abaixo do limiar.",
+  "gusa_t": 30.6,
+  "cestoes": [
+   [
+    {
+     "codigo": "SHRE",
+     "peso_t": 5.34
+    },
+    {
+     "codigo": "ESPS",
+     "peso_t": 4.21
+    },
+    {
+     "codigo": "GUSS",
+     "peso_t": 6.13
+    },
+    {
+     "codigo": "ESPS",
+     "peso_t": 5.77
+    },
+    {
+     "codigo": "OXIC",
+     "peso_t": 3.28
+    },
+    {
+     "codigo": "PAEP",
+     "peso_t": 8.42
+    },
+    {
+     "codigo": "GUSS",
+     "peso_t": 4.62
+    },
+    {
+     "codigo": "GUSS",
+     "peso_t": 3.21
+    },
+    {
+     "codigo": "ESPS",
+     "peso_t": 3.51
+    },
+    {
+     "codigo": "SHRE",
+     "peso_t": 4.75
+    }
+   ],
+   [
+    {
+     "codigo": "ESPS",
+     "peso_t": 7.88
+    },
+    {
+     "codigo": "OXIC",
+     "peso_t": 2.49
+    },
+    {
+     "codigo": "ESPS",
+     "peso_t": 3.08
+    },
+    {
+     "codigo": "GUSS",
+     "peso_t": 5.16
+    },
+    {
+     "codigo": "OXIC",
+     "peso_t": 5.46
+    },
+    {
+     "codigo": "GUSS",
+     "peso_t": 5.23
+    },
+    {
+     "codigo": "ESPS",
+     "peso_t": 3.61
+    },
+    {
+     "codigo": "OXIC",
+     "peso_t": 2.66
+    },
+    {
+     "codigo": "MISM",
+     "peso_t": 4.63
+    }
+   ]
+  ]
+ },
+ {
+  "nome": "2. Carga alta no cestão 2",
+  "corrida_real": "O7085",
+  "momento": "Forno típico",
+  "resultado_c1": "Ainda não sei",
+  "alarme": true,
+  "descricao": "Receita real (O7085), que deu carga alta no cestão 2 na fábrica. O modelo alarma, e o \"E agora?\" mostra uma recombinação.",
+  "gusa_t": 35.3,
+  "cestoes": [
+   [
+    {
+     "codigo": "MISM",
+     "peso_t": 4.46
+    },
+    {
+     "codigo": "MISB",
+     "peso_t": 4.75
+    },
+    {
+     "codigo": "ESPS",
+     "peso_t": 5.01
+    },
+    {
+     "codigo": "OXIC",
+     "peso_t": 3.41
+    },
+    {
+     "codigo": "ESPS",
+     "peso_t": 4.42
+    },
+    {
+     "codigo": "GUSS",
+     "peso_t": 3.53
+    },
+    {
+     "codigo": "PAEP",
+     "peso_t": 5.06
+    },
+    {
+     "codigo": "SHRE",
+     "peso_t": 4.7
+    },
+    {
+     "codigo": "GUSS",
+     "peso_t": 3.58
+    },
+    {
+     "codigo": "OXIC",
+     "peso_t": 3.38
+    },
+    {
+     "codigo": "SHRE",
+     "peso_t": 6.68
+    }
+   ],
+   [
+    {
+     "codigo": "MISM",
+     "peso_t": 5.95
+    },
+    {
+     "codigo": "PACB",
+     "peso_t": 3.65
+    },
+    {
+     "codigo": "ESPS",
+     "peso_t": 5.46
+    },
+    {
+     "codigo": "PAEP",
+     "peso_t": 5.14
+    },
+    {
+     "codigo": "GUSS",
+     "peso_t": 5.65
+    },
+    {
+     "codigo": "OXIC",
+     "peso_t": 5.28
+    },
+    {
+     "codigo": "SHRE",
+     "peso_t": 3.73
+    }
+   ]
+  ]
+ },
+ {
+  "nome": "3. Mesma receita, forno agitado",
+  "corrida_real": "O6748",
+  "momento": "Forno numa sequência de cargas altas",
+  "resultado_c1": "Ainda não sei",
+  "alarme": true,
+  "descricao": "A mesma receita do exemplo 1, agora com o forno em uma sequência de cargas altas. O risco sobe sem mudar nenhuma camada.",
+  "gusa_t": 30.6,
+  "cestoes": [
+   [
+    {
+     "codigo": "SHRE",
+     "peso_t": 5.34
+    },
+    {
+     "codigo": "ESPS",
+     "peso_t": 4.21
+    },
+    {
+     "codigo": "GUSS",
+     "peso_t": 6.13
+    },
+    {
+     "codigo": "ESPS",
+     "peso_t": 5.77
+    },
+    {
+     "codigo": "OXIC",
+     "peso_t": 3.28
+    },
+    {
+     "codigo": "PAEP",
+     "peso_t": 8.42
+    },
+    {
+     "codigo": "GUSS",
+     "peso_t": 4.62
+    },
+    {
+     "codigo": "GUSS",
+     "peso_t": 3.21
+    },
+    {
+     "codigo": "ESPS",
+     "peso_t": 3.51
+    },
+    {
+     "codigo": "SHRE",
+     "peso_t": 4.75
+    }
+   ],
+   [
+    {
+     "codigo": "ESPS",
+     "peso_t": 7.88
+    },
+    {
+     "codigo": "OXIC",
+     "peso_t": 2.49
+    },
+    {
+     "codigo": "ESPS",
+     "peso_t": 3.08
+    },
+    {
+     "codigo": "GUSS",
+     "peso_t": 5.16
+    },
+    {
+     "codigo": "OXIC",
+     "peso_t": 5.46
+    },
+    {
+     "codigo": "GUSS",
+     "peso_t": 5.23
+    },
+    {
+     "codigo": "ESPS",
+     "peso_t": 3.61
+    },
+    {
+     "codigo": "OXIC",
+     "peso_t": 2.66
+    },
+    {
+     "codigo": "MISM",
+     "peso_t": 4.63
+    }
+   ]
+  ]
+ }
+]

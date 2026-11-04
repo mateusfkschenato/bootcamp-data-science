@@ -55,6 +55,7 @@ No app:
 - **Cestão 1:** usa o modelo principal com `carga_alta_c1 = 0`, como ele foi treinado.
 - **Cestão 2:** se o resultado do cestão 1 é informado, usa o modelo oficial. Com "Ainda não sei", usa o **modelo reserva** do pacote (as mesmas 120 features, sem `carga_alta_c1`).
 - **Momento do forno:** histórico, ritmo, horário e as médias móveis vêm de uma corrida real, escolhida na tela (típico, calmo ou agitado). As corridas simuladas no app não entram nesse histórico.
+- **Corridas de exemplo:** o campo "Corrida de exemplo" abre receitas reais do período de teste (`dados_app/exemplos_corrida.json`) para a demonstração. O resultado aparece ao clicar em "Enviar corrida".
 - **Recombinação:** em cada cestão com alarme, o "E agora?" procura até 3 mudanças (material mais denso com o mesmo peso ou inversão de camadas vizinhas de classes diferentes), mantendo o peso total, o volume até 78 m³, sem pesado no fundo ou no topo e dentro do p99 dos cestões reais. A auditoria com um segundo modelo, treinado em semanas alternadas, mostrou queda em 87% dos casos, mas de 15 pontos, contra 35 no modelo da busca: é uma sugestão a confirmar com o pátio e com um piloto.
 
 O alarme dispara quando a chance passa do **limiar de minutos** que o pacote guarda (`limiar_minutos_TP0` ou `TP1`). Não é 50%: com parada média de ~3,9 min e alarme de 1 min, alarmar compensa bem antes disso.

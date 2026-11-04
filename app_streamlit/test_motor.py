@@ -113,3 +113,14 @@ def test_resultado_do_cestao_1_muda_o_modelo_do_cestao_2():
     c2 = [motor.Camada("SHRE", 4), motor.Camada("MISM", 4)]
     r = motor.prever_corrida([c1, c2], m, 35, 1, modo, pac, mats, cfg)["cestoes"][1]
     assert r["modelo"] == "principal"
+
+
+def test_exemplos_dao_o_resultado_prometido():
+    mats, cfg, mom, pac = motor.carregar_materiais(), motor.carregar_config(), motor.carregar_momentos(), motor.carregar_modelo()
+    modo = list(cfg["limiares"]["principal"])[0]
+    for e in motor.carregar_exemplos():
+        cs = [[motor.Camada(**c) for c in cam] for cam in e["cestoes"]]
+        for cam in cs:
+            assert motor.resumo_cestao(cam, mats)["volume_m3_total"] <= motor.CAPACIDADE_M3
+        r = motor.prever_corrida(cs, mom.loc[cfg["presets_momento"][e["momento"]]], e["gusa_t"], None, modo, pac, mats, cfg)
+        assert r["alarme_corrida"] == e["alarme"], e["nome"]
