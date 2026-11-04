@@ -70,3 +70,46 @@ def test_previsao_cestao_1_principal_cestao_2_reserva():
     r = motor.prever_corrida([c1, c2], m, 34.3, None, modo, pac, mats, cfg)
     assert r["cestoes"][0]["modelo"] == "principal" and r["cestoes"][1]["modelo"] == "reserva"
     assert 0 <= r["cestoes"][1]["chance"] <= 1
+
+
+def _alarme():
+    mats, cfg, mom, pac = motor.carregar_materiais(), motor.carregar_config(), motor.carregar_momentos(), motor.carregar_modelo()
+    m = mom.loc[cfg["presets_momento"]["Forno típico"]]
+    modo = list(cfg["limiares"]["principal"])[0]
+    c1 = [motor.Camada(c, p) for c, p in [("SHRE", 5), ("OXIC", 4.5), ("SHRE", 5), ("MISM", 4.5), ("OXIC", 4),
+                                          ("SHRE", 5), ("ESPS", 4), ("MISM", 4)]]
+    return c1, m, modo, pac, mats, cfg
+
+
+def test_recombinacao_respeita_as_restricoes():
+    c1, m, modo, pac, mats, cfg = _alarme()
+    assert motor.prever_corrida([c1], m, 35, None, modo, pac, mats, cfg)["cestoes"][0]["alarme"]
+    r = motor.recombinar_cestao([c1], 1, m, 35, None, modo, pac, mats, cfg)
+    assert r["status"] == "ok" and 1 <= len(r["mudancas"]) <= motor.MAX_MUDANCAS
+    novo = [motor.Camada(*c) for c in r["camadas"]]
+    f = motor.features_receita(novo, mats)
+    assert abs(f["peso_t_total"] - sum(c.peso_t for c in c1)) < 1e-9       # peso total igual
+    assert f["volume_m3_total"] <= motor.CAPACIDADE_M3 and f["violacao_regra"] == 0
+    assert all(f[c] <= cfg["limites_receita"][c] for c in motor.LIMITADAS)
+    p = motor.prever_corrida([novo], m, 35, None, modo, pac, mats, cfg)["cestoes"][0]
+    np.testing.assert_allclose(p["chance"], r["chance_depois"])            # a chance mostrada é a da receita aplicada
+    assert not p["alarme"]
+
+
+def test_recombinacao_nao_faz_o_cestao_2_passar_a_alarmar():
+    c1, m, modo, pac, mats, cfg = _alarme()
+    c2 = [motor.Camada("GUSS", 5), motor.Camada("OXIC", 4), motor.Camada("GUSS", 5), motor.Camada("SHRE", 4)]
+    c2 = [c2[3], c2[0], c2[1], c2[2], motor.Camada("SHRE", 4)]
+    antes = motor.prever_corrida([c1, c2], m, 35, None, modo, pac, mats, cfg)["cestoes"]
+    r = motor.recombinar_cestao([c1, c2], 1, m, 35, None, modo, pac, mats, cfg)
+    if r["status"] != "sem_solucao":
+        novo = [motor.Camada(*c) for c in r["camadas"]]
+        depois = motor.prever_corrida([novo, c2], m, 35, None, modo, pac, mats, cfg)["cestoes"]
+        assert antes[1]["alarme"] or not depois[1]["alarme"]
+
+
+def test_resultado_do_cestao_1_muda_o_modelo_do_cestao_2():
+    c1, m, modo, pac, mats, cfg = _alarme()
+    c2 = [motor.Camada("SHRE", 4), motor.Camada("MISM", 4)]
+    r = motor.prever_corrida([c1, c2], m, 35, 1, modo, pac, mats, cfg)["cestoes"][1]
+    assert r["modelo"] == "principal"

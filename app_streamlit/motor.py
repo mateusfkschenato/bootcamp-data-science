@@ -333,3 +333,163 @@ def sugerir_troca(cestoes: list[list[Camada]], k: int, momento: pd.Series, gusa_
     j, p = candidatos[i]
     return {"camada": j, "de": cestoes[k - 1][j].codigo, "para": p, "peso_t": cestoes[k - 1][j].peso_t,
             "chance_antes": alvo["chance"], "chance_depois": float(ch[i]), "limiar": alvo["limiar"]}
+
+
+# ====================================================================== recombinar o cestão
+MAX_MUDANCAS = 3              # no máximo 3 mudanças na receita
+PCT_MIN_MATERIAL = 0.05       # só sugere material presente em pelo menos 5% dos cestões
+FAIXA_PESO_MATERIAL = (0.8, 1.2)   # o peso da camada precisa caber na faixa típica do material novo (p10–p90 ± 20%)
+N_MOVIMENTOS = 30             # da 2ª mudança em diante, combina só os 30 movimentos mais promissores
+LARGURA_BUSCA = 3             # receitas parciais guardadas a cada passo
+GANHO_MINIMO = 0.02           # abaixo de 2 pontos, a mudança não vale a sugestão
+LIMITADAS = ["densidade_media", "prop_peso_pesado", "num_materiais", "n_ciclos", "max_bloco_pesado_m3"]
+
+
+def _movimentos(camadas: list[Camada], materiais: pd.DataFrame) -> list[tuple]:
+    """Mudanças de um passo: trocar uma camada por um material mais denso, com o mesmo peso,
+    ou inverter duas camadas vizinhas de classes diferentes."""
+    comuns = materiais[materiais["pct_cestoes"] >= PCT_MIN_MATERIAL]
+    mov = []
+    for j, c in enumerate(camadas):
+        dens = materiais.loc[c.codigo, "densidade"]
+        for cod, m in comuns.iterrows():
+            lo, hi = m["peso_p10_t"] * FAIXA_PESO_MATERIAL[0], m["peso_p90_t"] * FAIXA_PESO_MATERIAL[1]
+            if m["densidade"] > dens and lo <= c.peso_t <= hi:
+                mov.append(("material", j, cod))
+    for j in range(len(camadas) - 1):
+        if materiais.loc[camadas[j].codigo, "classe"] != materiais.loc[camadas[j + 1].codigo, "classe"]:
+            mov.append(("ordem", j, None))
+    return mov
+
+
+def _aplicar(camadas: list[Camada], mov: tuple, materiais: pd.DataFrame) -> list[Camada] | None:
+    """Receita depois do movimento; None se ele não fizer sentido nesta receita."""
+    tipo, j, cod = mov
+    novo = list(camadas)
+    if tipo == "ordem":
+        if materiais.loc[novo[j].codigo, "classe"] == materiais.loc[novo[j + 1].codigo, "classe"]:
+            return None
+        novo[j], novo[j + 1] = novo[j + 1], novo[j]
+        return novo
+    if materiais.loc[cod, "densidade"] <= materiais.loc[novo[j].codigo, "densidade"]:
+        return None
+    m = materiais.loc[cod]
+    lo, hi = m["peso_p10_t"] * FAIXA_PESO_MATERIAL[0], m["peso_p90_t"] * FAIXA_PESO_MATERIAL[1]
+    if not lo <= novo[j].peso_t <= hi:
+        return None
+    novo[j] = Camada(cod, novo[j].peso_t)
+    return novo
+
+
+def _texto_mudanca(camadas: list[Camada], mov: tuple, materiais: pd.DataFrame) -> str:
+    """Frase da mudança, com as posições contadas a partir do fundo (camada 1)."""
+    tipo, j, cod = mov
+    if tipo == "ordem":
+        return (f"Inverter as camadas {j + 1} e {j + 2} "
+                f"({camadas[j].codigo} e {camadas[j + 1].codigo})")
+    peso = f"{camadas[j].peso_t:.1f}".replace(".", ",")
+    return (f"Trocar a camada {j + 1}: {camadas[j].codigo} por {cod} "
+            f"({materiais.loc[cod, 'descricao'].title()}), {peso} t")
+
+
+def _dentro_dos_limites(f: dict, original: dict, limites: dict) -> bool:
+    """Receita realista: não cria pesado no fundo/topo e não passa do p99 dos cestões reais.
+    Se a receita original já estava fora de um limite, a nova só não pode piorar."""
+    if f["violacao_regra"] > original["violacao_regra"]:
+        return False
+    return all(f[c] <= max(limites[c], original[c]) for c in LIMITADAS)
+
+
+def recombinar_cestao(cestoes: list[list[Camada]], k: int, momento: pd.Series, gusa_t: float | None,
+                      resultado_c1: int | None, modo: str, pacote: dict, materiais: pd.DataFrame,
+                      config: dict, max_mudancas: int = MAX_MUDANCAS) -> dict | None:
+    """Procura a menor recombinação do cestão k que tire a corrida do alarme nesse cestão.
+
+    Mudanças permitidas: material mais denso com o mesmo peso e inversão de camadas vizinhas.
+    O peso total nunca muda. A receita final precisa caber na boca do cestão, respeitar os
+    limites reais (config["limites_receita"]) e não pode fazer o outro cestão passar a alarmar.
+    É uma pergunta feita ao modelo, não uma regra de operação.
+
+    status: "ok" (fica abaixo do limiar), "parcial" (baixa, mas continua acima) ou
+    "sem_solucao" (nenhuma mudança realista baixa pelo menos GANHO_MINIMO)."""
+    antes = prever_corrida(cestoes, momento, gusa_t, resultado_c1, modo, pacote, materiais, config)
+    alvo = antes["cestoes"][k - 1]
+    original = cestoes[k - 1]
+    if not original:
+        return None
+    parte = pacote["com_cestao1"] if alvo["modelo"] == "principal" else pacote["sem_cestao1_reserva"]
+    c1_val = 0 if k == 1 else (resultado_c1 or 0)
+    limites = config["limites_receita"]
+    receitas = [features_receita(c, materiais) for c in cestoes]
+    f_orig = receitas[k - 1]
+
+    def linha(camadas):
+        rec = list(receitas)
+        rec[k - 1] = features_receita(camadas, materiais)
+        cods = [{x.codigo for x in (camadas if i == k - 1 else c)} for i, c in enumerate(cestoes)]
+        if len(cods) == 1:
+            cods.append(set())
+        ex = execucao_estimada(rec[k - 1]["num_camadas"], rec[k - 1]["num_materiais"], config)
+        return rec[k - 1], linha_cestao(k, rec, cods, momento, gusa_t, c1_val, ex)
+
+    def outro_cestao_piora(camadas):
+        """Mudar o cestão 1 mexe nas features do cestão 2: ele não pode passar a alarmar."""
+        if k != 1 or len(cestoes) < 2:
+            return False, None
+        novo = [camadas, cestoes[1]]
+        r = prever_corrida(novo, momento, gusa_t, resultado_c1, modo, pacote, materiais, config)["cestoes"][1]
+        a = antes["cestoes"][1]
+        info = {"cestao": 2, "antes": a["chance"], "depois": r["chance"], "alarme": r["alarme"]}
+        return (r["alarme"] and not a["alarme"]) or r["chance"] > a["chance"] + GANHO_MINIMO, info
+
+    fila = [(original, [])]
+    vistos = {tuple((c.codigo, c.peso_t) for c in original)}
+    movimentos = None
+    melhor = None                       # melhor receita válida que não chega ao limiar
+    for passo in range(1, max_mudancas + 1):
+        filhos, linhas = [], []
+        for camadas, hist in fila:
+            for mov in (movimentos if movimentos is not None else _movimentos(camadas, materiais)):
+                novo = _aplicar(camadas, mov, materiais)
+                if novo is None:
+                    continue
+                chave = tuple((c.codigo, c.peso_t) for c in novo)
+                if chave in vistos:
+                    continue
+                vistos.add(chave)
+                f, lin = linha(novo)
+                if _dentro_dos_limites(f, f_orig, limites):
+                    filhos.append((novo, hist + [(camadas, mov)], f))
+                    linhas.append(lin)
+        if not filhos:
+            break
+        ch = chance(parte, linhas)
+        ordem = np.argsort(ch, kind="stable")
+        if movimentos is None:
+            movimentos = list(dict.fromkeys(filhos[i][1][-1][1] for i in ordem[:N_MOVIMENTOS]))
+        for i in ordem:
+            novo, hist, f = filhos[i]
+            cabe = f["volume_m3_total"] <= CAPACIDADE_M3
+            piora, info = outro_cestao_piora(novo) if cabe else (False, None)
+            if not cabe or piora:
+                continue
+            if melhor is None or ch[i] < melhor["chance"]:
+                melhor = {"camadas": novo, "hist": hist, "chance": float(ch[i]), "outro": info}
+            break                       # em ordem de chance: a 1ª válida é a melhor deste passo
+        if melhor is not None and melhor["chance"] <= alvo["limiar"]:
+            break
+        fila = [(filhos[i][0], filhos[i][1]) for i in ordem[:LARGURA_BUSCA]]
+
+    if melhor is None or alvo["chance"] - melhor["chance"] < GANHO_MINIMO:
+        status = "sem_solucao"
+    else:
+        status = "ok" if melhor["chance"] <= alvo["limiar"] else "parcial"
+    res = {"status": status, "cestao": k, "chance_antes": alvo["chance"], "limiar": alvo["limiar"],
+           "modelo": alvo["modelo"], "antes": resumo_cestao(original, materiais),
+           "excede_volume": f_orig["volume_m3_total"] > CAPACIDADE_M3}
+    if status != "sem_solucao":
+        res.update({"chance_depois": melhor["chance"], "outro": melhor["outro"],
+                    "mudancas": [_texto_mudanca(c, m, materiais) for c, m in melhor["hist"]],
+                    "camadas": [(c.codigo, c.peso_t) for c in melhor["camadas"]],
+                    "depois": resumo_cestao(melhor["camadas"], materiais)})
+    return res

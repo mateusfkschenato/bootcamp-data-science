@@ -7,6 +7,7 @@ selecao_algoritmos/modelo_final.joblib) diz se ela deve dar carga alta.
 Rodar (de dentro desta pasta):
     python -m streamlit run app.py
 """
+import copy
 import importlib
 import math
 
@@ -38,8 +39,14 @@ PACOTE, MATS, CFG, MOMENTOS = carregar()
 GUSA = CFG["gusa"]
 GUSA_PADRAO_T = 35.0      # número redondo perto da mediana real (34,3 t)
 MODOS = list(CFG["limiares"]["principal"])
-# Histórico, ritmo e horário do forno ficam fixos num momento real típico (ver README).
-MOMENTO_ID = CFG["presets_momento"]["Forno típico"]
+# Histórico, ritmo e horário vêm de um momento real do forno, escolhido na tela (ver README).
+MOMENTOS_FORNO = list(CFG["presets_momento"])
+NOME_MOMENTO = {"Forno típico": "Típico", "Forno calmo": "Calmo", "Forno numa sequência de cargas altas": "Agitado"}
+RESULTADO_C1 = {"Ainda não sei": None, "Não deu carga alta": 0, "Deu carga alta": 1}
+
+
+def _momento(nome):
+    return MOMENTOS.loc[CFG["presets_momento"][nome]]
 
 
 def _camadas(receita):
@@ -47,21 +54,28 @@ def _camadas(receita):
 
 
 @st.cache_data(show_spinner=False, max_entries=200)
-def prever(receita, gusa_t, modo):
+def prever(receita, gusa_t, modo, momento_forno, resultado_c1):
     """receita = tupla de tuplas (código, peso) por cestão; tudo hashable para o cache."""
-    return motor.prever_corrida(_camadas(receita), MOMENTOS.loc[MOMENTO_ID], gusa_t, None, modo,
+    return motor.prever_corrida(_camadas(receita), _momento(momento_forno), gusa_t, resultado_c1, modo,
                                 PACOTE, MATS, CFG)
 
 
 @st.cache_data(show_spinner="Procurando uma troca que baixe o risco...", max_entries=100)
-def sugerir(receita, k, gusa_t, modo):
-    return motor.sugerir_troca(_camadas(receita), k, MOMENTOS.loc[MOMENTO_ID], gusa_t, None, modo,
+def sugerir(receita, k, gusa_t, modo, momento_forno, resultado_c1):
+    return motor.sugerir_troca(_camadas(receita), k, _momento(momento_forno), gusa_t, resultado_c1, modo,
                                PACOTE, MATS, CFG)
+
+
+@st.cache_data(show_spinner="Procurando uma recombinação da receita...", max_entries=100)
+def recombinar(receita, k, gusa_t, modo, momento_forno, resultado_c1):
+    return motor.recombinar_cestao(_camadas(receita), k, _momento(momento_forno), gusa_t, resultado_c1, modo,
+                                   PACOTE, MATS, CFG)
 
 
 # ====================================================================== estado
 def _iniciar_estado():
-    padrao = {"corrida": None, "ativo": 1, "anim": None, "erro": None, "n_corridas": 0, "modo": MODOS[0]}
+    padrao = {"corrida": None, "ativo": 1, "anim": None, "erro": None, "n_corridas": 0, "modo": MODOS[0],
+              "momento_forno": MOMENTOS_FORNO[0], "resultado_c1": "Ainda não sei", "receita_antes": None}
     for k, v in padrao.items():
         if k not in st.session_state:
             st.session_state[k] = v
@@ -76,6 +90,7 @@ def _mudou_receita():
     if ss.corrida:
         ss.corrida["enviada"] = False
     ss.erro = None
+    ss.receita_antes = None
 
 
 # ====================================================================== ações (callbacks)
@@ -86,6 +101,7 @@ def nova_corrida():
     ss.ativo = 1
     ss.anim = {"tipo": "gusa"}
     ss.erro = None
+    ss.receita_antes = None
 
 
 def novo_cestao():
@@ -168,10 +184,26 @@ def aplicar_sugestao(cestao, j, para):
     ss.corrida["enviada"] = True        # mostra o resultado novo direto
 
 
+def aplicar_recombinacao(cestao, camadas):
+    ss.receita_antes = copy.deepcopy(ss.corrida["cestoes"])
+    ss.corrida["cestoes"][cestao - 1] = [{"codigo": c, "peso_t": p} for c, p in camadas]
+    ss.ativo = cestao
+    ss.anim = None
+    ss.corrida["enviada"] = True        # mostra o resultado novo direto
+
+
+def voltar_receita():
+    ss.corrida["cestoes"] = ss.receita_antes
+    ss.receita_antes = None
+    ss.anim = None
+    ss.corrida["enviada"] = True
+
+
 def descartar_corrida():
     ss.corrida = None
     ss.anim = None
     ss.erro = None
+    ss.receita_antes = None
 
 
 # ====================================================================== estilo (identidade EVCOMX)
@@ -268,6 +300,35 @@ def abrir_aviso(mensagem):
     janela(corpo)()
 
 
+# ====================================================================== recombinação
+def mostrar_recombinacao(rec):
+    """Bloco do "E agora?": até 3 mudanças na receita de um cestão que alarmou."""
+    if rec is None:
+        return
+    k = rec["cestao"]
+    if rec["status"] == "sem_solucao":
+        fim = (" Além disso, o volume já passa da boca do cestão: tire material antes de recombinar."
+               if rec["excede_volume"] else "")
+        st.warning(f"**Recombinação do cestão {k}:** com até {motor.MAX_MUDANCAS} mudanças realistas, a montagem não "
+                   f"resolve. O risco que sobra tende a vir do que a receita não muda, como o histórico do forno e a gusa.{fim}")
+        return
+    a, d = rec["antes"], rec["depois"]
+    with st.container(border=True):
+        chega = rec["status"] == "ok"
+        st.markdown(f"**Recombinação do cestão {k}** · "
+                    + ("fica abaixo do limiar" if chega else "baixa o risco, mas ainda fica acima do limiar"))
+        st.markdown("\n".join(f"{i}. {m}" for i, m in enumerate(rec["mudancas"], start=1)))
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric(f"Chance (era {rec['chance_antes']:.0%})", f"{rec['chance_depois']:.0%}")
+        k2.metric("Peso (igual)", f"{desenho._fmt(d['peso_t_total'])} t")
+        k3.metric(f"Volume (era {desenho._fmt(a['volume_m3_total'])})", f"{desenho._fmt(d['volume_m3_total'])} m³")
+        k4.metric(f"Pesado (era {a['prop_peso_pesado']:.0%})", f"{d['prop_peso_pesado']:.0%}")
+        if rec["outro"]:
+            st.caption(f"Cestão 2 com essa mudança: chance de {rec['outro']['antes']:.0%} para {rec['outro']['depois']:.0%}.")
+        st.button("Aplicar recombinação", key=f"rec_{k}", type="primary", on_click=aplicar_recombinacao,
+                  args=(k, rec["camadas"]))
+
+
 # ====================================================================== barra lateral
 with st.sidebar:
     st.subheader("Quando alarmar?", anchor=False)
@@ -278,7 +339,7 @@ with st.sidebar:
     modo = ss.modo
 
     with st.expander("Sobre o modelo"):
-        mom = motor.resumo_momento(MOMENTOS.loc[MOMENTO_ID])
+        mom = motor.resumo_momento(_momento(ss.momento_forno))
         st.markdown(
             f"""
 **Média de 5 Gradient Boosting**, lida de `{CFG['modelo']['arquivo']}`: o modelo escolhido
@@ -289,11 +350,12 @@ No teste (24/jun a 4/ago/2026): PR-AUC **0,57** e **131 min** de forno perdidos,
 O limiar não é 50%: é a chance a partir da qual alarmar dá menos minutos perdidos.
 A **gusa líquida** entra no modelo.
 
-O cestão 2 usa a versão do modelo **sem o resultado do cestão 1** (a reserva do pacote).
+Se o resultado do cestão 1 ainda não é conhecido, o cestão 2 usa a versão do modelo **sem esse resultado**
+(a reserva do pacote).
 
-O histórico do forno fica fixo num momento real típico ({mom['inicio'][8:10]}/{mom['inicio'][5:7]}/{mom['inicio'][:4]},
-{mom['ult10']*10:.0f} carga alta nas 10 corridas anteriores). O número de baias e o tempo de montagem
-usam o valor típico.
+O histórico do forno vem de um momento real ({mom['inicio'][8:10]}/{mom['inicio'][5:7]}/{mom['inicio'][:4]},
+{mom['ult10']*10:.0f} cargas altas nas 10 corridas anteriores): as corridas simuladas aqui não entram nele.
+O número de baias e o tempo de montagem usam o valor típico.
 """)
 
 
@@ -344,7 +406,10 @@ with b4:
 # ---------- previsão (se a corrida já foi enviada) ----------
 pronta = n_cestoes > 0 and all(len(c) > 0 for c in cestoes)
 receita = tuple(tuple((c["codigo"], c["peso_t"]) for c in cam) for cam in cestoes)
-previsao = prever(receita, corrida["gusa_t"], modo) if corrida["enviada"] and pronta else None
+momento_forno = ss.momento_forno
+resultado_c1 = RESULTADO_C1[ss.resultado_c1] if n_cestoes >= 2 else None
+previsao = (prever(receita, corrida["gusa_t"], modo, momento_forno, resultado_c1)
+            if corrida["enviada"] and pronta else None)
 
 # ---------- desenho (esquerda) + inserir camada e painel (direita) ----------
 camadas_obj = [[motor.Camada(**c) for c in cam] for cam in cestoes]
@@ -413,6 +478,18 @@ with col_lado:
                       help=f"do peso. Metade dos cestões fica entre {ref['prop_peso_pesado']['p25']:.0%} e "
                            f"{ref['prop_peso_pesado']['p75']:.0%}")
 
+    # ---------- momento do forno e resultado do cestão 1 ----------
+    st.subheader("Momento da corrida", anchor=False)
+    st.radio("Momento do forno", MOMENTOS_FORNO, key="momento_forno", horizontal=True, on_change=mudou_controle,
+             format_func=lambda m: NOME_MOMENTO.get(m, m),
+             help="Histórico, ritmo e horário de uma corrida real. As corridas simuladas aqui não entram nele.")
+    mom_atual = motor.resumo_momento(_momento(ss.momento_forno))
+    st.caption(f"Nas 10 corridas anteriores: {mom_atual['ult10'] * 10:.0f} com carga alta.")
+    if n_cestoes >= 2:
+        st.radio("Resultado do cestão 1", list(RESULTADO_C1), key="resultado_c1", horizontal=True,
+                 on_change=mudou_controle,
+                 help="Se o resultado é conhecido, o cestão 2 usa o modelo oficial. Senão, usa o modelo reserva.")
+
     # ---------- enviar ----------
     motivo = None
     if n_cestoes == 0:
@@ -474,7 +551,7 @@ if previsao is not None:
     if not alvo:
         st.markdown("- Nenhum cestão alarmou neste modo: pelo modelo, a receita pode seguir como está.")
     for r in alvo:
-        sug = sugerir(receita, r["cestao"], corrida["gusa_t"], modo)
+        sug = sugerir(receita, r["cestao"], corrida["gusa_t"], modo, momento_forno, resultado_c1)
         if not sug or sug["chance_antes"] - sug["chance_depois"] < 0.02:
             st.markdown(f"- **Cestão {r['cestao']}**: nenhuma troca simples de uma camada por pesado baixa a chance "
                         f"de forma visível.")
@@ -490,9 +567,14 @@ if previsao is not None:
         with c2:
             st.button("Testar essa troca", key=f"sug_{r['cestao']}", on_click=aplicar_sugestao,
                       args=(r["cestao"], sug["camada"], sug["para"]))
+        mostrar_recombinacao(recombinar(receita, r["cestao"], corrida["gusa_t"], modo, momento_forno, resultado_c1))
     if alvo:
-        st.caption("A sugestão é uma pergunta feita ao modelo (o que muda se essa camada fosse de pesado?), "
-                   "não uma regra de operação: confira com a equipe do pátio se o material está disponível.")
+        st.caption("Sugestão do modelo. Confirme com o pátio: ele não sabe o estoque nem o custo dos materiais, e isto "
+                   "não é uma regra de operação. A queda mostrada é otimista: na nossa auditoria com um segundo modelo, "
+                   "treinado em outras semanas, a chance caiu em 87% dos casos, mas a queda média foi de 15 pontos, "
+                   "contra 35 no modelo da busca. Só um piloto no forno confirma o efeito real.")
+    if ss.receita_antes is not None:
+        st.button("↩️  Voltar à receita anterior", on_click=voltar_receita)
 
 with st.expander("Receita em tabela"):
     linhas = [{"Cestão": i, "Camada": j + 1, "Material": c["codigo"],

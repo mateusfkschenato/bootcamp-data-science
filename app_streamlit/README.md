@@ -45,16 +45,17 @@ A fonte é a **Bai Jamjuree**, carregada do Google Fonts (precisa de internet; s
 | Receita do cestão (peso, volume, densidade, classes, materiais, ciclos, topo e fundo...) | 67 | Calculadas das camadas que você monta, com as regras de `feature_selection/feature_selection.py` |
 | Cestão 1 → cestão 2 (`volume_c1_m3`, `delta_peso_12_t`, `mudou_composicao`...) | 6 | Calculadas da corrida montada |
 | Gusa líquida (`gusl_t`, `tem_gusl`, `carga3_solida_t`) | 3 | Do controle de gusa (o app não tem carga sólida no 3º carregamento) |
-| Histórico, ritmo e horário (`h_*`, `taxa_ca_ult*`, `gap_*`, `hora`, `turno`...) | 26 | Copiadas do **momento do forno** fixo (uma corrida real típica) |
+| Histórico, ritmo e horário (`h_*`, `taxa_ca_ult*`, `gap_*`, `hora`, `turno`...) | 26 | Copiadas do **momento do forno** escolhido na tela (uma corrida real: típico, calmo ou agitado) |
 | Receita comparada com os cestões anteriores (`rel_*`, `rel2_*`) | 14 | Feature da receita − média móvel naquele momento (a média sai de `X − rel_X` na corrida real) |
 | Execução da montagem (`num_baias`, `tempo_montagem_min`, `intervalo_medio_min`) | 3 | **Estimadas**: baias = nº de materiais (vale em 3.497 de 3.501 cestões) e tempo = intervalo típico entre camadas × (camadas − 1) |
-| `carga_alta_c1` | 1 | 0 no cestão 1; o cestão 2 usa o modelo reserva, que não tem essa feature |
+| `carga_alta_c1` | 1 | 0 no cestão 1; no cestão 2, vem do campo "Resultado do cestão 1". Se for "Ainda não sei", usa o modelo reserva, que não tem essa feature |
 
 No app:
 
 - **Cestão 1:** usa o modelo principal com `carga_alta_c1 = 0`, como ele foi treinado.
-- **Cestão 2:** usa o **modelo reserva** do pacote (as mesmas 120 features, sem `carga_alta_c1`), para o resultado do cestão 1 não entrar na conta.
-- **Momento do forno:** histórico, ritmo, horário e as médias móveis ficam fixos num momento real típico (a corrida `O6945`, 12/07/2026 06:31, com 1 carga alta nas 10 corridas anteriores). O `motor.py` aceita qualquer momento de `dados_app/momentos.csv`, se um dia quiserem voltar a escolher.
+- **Cestão 2:** se o resultado do cestão 1 é informado, usa o modelo oficial. Com "Ainda não sei", usa o **modelo reserva** do pacote (as mesmas 120 features, sem `carga_alta_c1`).
+- **Momento do forno:** histórico, ritmo, horário e as médias móveis vêm de uma corrida real, escolhida na tela (típico, calmo ou agitado). As corridas simuladas no app não entram nesse histórico.
+- **Recombinação:** em cada cestão com alarme, o "E agora?" procura até 3 mudanças (material mais denso com o mesmo peso ou inversão de camadas vizinhas de classes diferentes), mantendo o peso total, o volume até 78 m³, sem pesado no fundo ou no topo e dentro do p99 dos cestões reais. A auditoria com um segundo modelo, treinado em semanas alternadas, mostrou queda em 87% dos casos, mas de 15 pontos, contra 35 no modelo da busca: é uma sugestão a confirmar com o pátio e com um piloto.
 
 O alarme dispara quando a chance passa do **limiar de minutos** que o pacote guarda (`limiar_minutos_TP0` ou `TP1`). Não é 50%: com parada média de ~3,9 min e alarme de 1 min, alarmar compensa bem antes disso.
 

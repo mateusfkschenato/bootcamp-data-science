@@ -50,6 +50,13 @@
    "p90": 62.129999999999995
   }
  },
+ "limites_receita": {
+  "densidade_media": 1.216161885090651,
+  "prop_peso_pesado": 0.5980779363046483,
+  "num_materiais": 10.0,
+  "n_ciclos": 6.0,
+  "max_bloco_pesado_m3": 4.778707692307683
+ },
  "presets_momento": {
   "Forno típico": "O6945",
   "Forno calmo": "O6827",

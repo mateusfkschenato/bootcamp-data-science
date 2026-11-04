@@ -113,6 +113,11 @@ referencia = {c: {q: float(treino[c].quantile(p)) for q, p in
 por_cestao = cam.groupby(["cd_corrida", "nu_carregamento"]).agg(peso=("peso_t", "sum"), vol=("volume_m3", "sum"))
 referencia["peso_t_total"] = {"p10": float(por_cestao.peso.quantile(.1)), "p90": float(por_cestao.peso.quantile(.9))}
 
+# ---------------------------------------------------------------- limites realistas para a recombinação
+# p99 dos cestões reais: a sugestão não pode criar uma receita fora do que a fábrica já fez.
+limites_receita = {c: float(dm[c].quantile(.99)) for c in
+                   ["densidade_media", "prop_peso_pesado", "num_materiais", "n_ciclos", "max_bloco_pesado_m3"]}
+
 # ---------------------------------------------------------------- gusa e paradas
 gusl = base[base["cd_codigo_material"] == "GUSL"].groupby("cd_corrida")["peso_t"].sum()
 resposta["tem_gusl"] = resposta["cd_corrida"].isin(gusl.index)
@@ -132,6 +137,7 @@ config = {
     },
     "parada_media_min": float(dur.mean()), "parada_mediana_min": float(dur.median()),
     "referencia": referencia,
+    "limites_receita": limites_receita,
     "presets_momento": presets,
     "intervalo_por_n_camadas": intervalo_por_n,
     "gusa": {"t_p10": float(gusl.quantile(.1)), "t_mediana": float(gusl.median()), "t_p90": float(gusl.quantile(.9)),
