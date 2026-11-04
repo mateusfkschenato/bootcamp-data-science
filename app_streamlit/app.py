@@ -225,15 +225,16 @@ section[data-testid="stSidebar"] details {{ border-color: #333; }}
              font-family: {FONTE}; }}
 .mat-info b {{ color: {PRETO}; }}
 div[data-testid="stMetricValue"] {{ font-size: 1.2rem; color: {PRETO}; font-weight: 700; }}
-div[role="dialog"] {{ background: rgba(198, 40, 40, .82) !important; backdrop-filter: blur(4px); border: 4px solid #8E0000 !important; border-top-width: 10px !important; }}
-div[role="dialog"] h1, div[role="dialog"] h2, div[role="dialog"] h3 {{ color: {BRANCO} !important; font-weight: 800 !important; }}
-div[role="dialog"] svg {{ color: {BRANCO}; }}
+[data-testid="stDialog"] div:has(> section[role="dialog"]) {{ background: rgba(211, 47, 47, .82) !important;
+    backdrop-filter: blur(6px); border: 4px solid #8E0000 !important; }}
+section[role="dialog"] h1, section[role="dialog"] h2, section[role="dialog"] h3 {{ color: {BRANCO} !important; font-weight: 800 !important; }}
+section[role="dialog"] svg {{ color: {BRANCO}; }}
 .aviso-grave {{ font-family: {FONTE}; font-size: 21px; font-weight: 800; line-height: 1.4; color: {BRANCO}; margin: 4px 0 8px; }}
-.aviso-grave small {{ display: block; margin-top: 10px; font-size: 15px; font-weight: 700; color: #FFE3E3; }}
-div[role="dialog"] .stButton > button, div[role="dialog"] button[data-testid^="stBaseButton"] {{
-    background: {BRANCO} !important; border-color: {BRANCO} !important; color: #B71C1C !important; font-weight: 800; }}
-div[role="dialog"] .stButton > button:hover, div[role="dialog"] button[data-testid^="stBaseButton"]:hover {{
-    background: #FFE3E3 !important; border-color: #FFE3E3 !important; color: #8E0000 !important; }}
+.aviso-grave small {{ display: block; margin-top: 10px; font-size: 15px; font-weight: 700; color: {BRANCO}; }}
+[data-testid="stDialog"] button[data-testid^="stBaseButton"], [data-testid="stDialog"] .stButton > button {{
+    background: #B71C1C !important; border: 2px solid {BRANCO} !important; color: {BRANCO} !important; font-weight: 800; }}
+[data-testid="stDialog"] button[data-testid^="stBaseButton"]:hover, [data-testid="stDialog"] .stButton > button:hover {{
+    background: #8E0000 !important; color: {BRANCO} !important; }}
 .rodape {{ color: {CINZA}; font-size: 12px; margin-top: 18px; border-top: 1px solid {CINZA_LINHA}; padding-top: 10px;
            font-family: {FONTE}; }}
 </style>
