@@ -225,9 +225,15 @@ section[data-testid="stSidebar"] details {{ border-color: #333; }}
              font-family: {FONTE}; }}
 .mat-info b {{ color: {PRETO}; }}
 div[data-testid="stMetricValue"] {{ font-size: 1.2rem; color: {PRETO}; font-weight: 700; }}
-div[role="dialog"] {{ border-top: 8px solid #C62828; }}
-.aviso-grave {{ font-family: {FONTE}; font-size: 19px; line-height: 1.45; color: {PRETO}; margin: 4px 0 8px; }}
-.aviso-grave small {{ display: block; margin-top: 10px; font-size: 15px; color: #555; }}
+div[role="dialog"] {{ background: #FFD6D6 !important; border: 5px solid #C62828 !important; border-top-width: 12px !important; }}
+div[role="dialog"] h1, div[role="dialog"] h2, div[role="dialog"] h3 {{ color: #B71C1C !important; font-weight: 800 !important; }}
+div[role="dialog"] svg {{ color: #B71C1C; }}
+.aviso-grave {{ font-family: {FONTE}; font-size: 21px; font-weight: 800; line-height: 1.4; color: #8E0000; margin: 4px 0 8px; }}
+.aviso-grave small {{ display: block; margin-top: 10px; font-size: 15px; font-weight: 700; color: #8E0000; }}
+div[role="dialog"] .stButton > button, div[role="dialog"] button[data-testid^="stBaseButton"] {{
+    background: #C62828 !important; border-color: #C62828 !important; color: {BRANCO} !important; font-weight: 800; }}
+div[role="dialog"] .stButton > button:hover, div[role="dialog"] button[data-testid^="stBaseButton"]:hover {{
+    background: #8E0000 !important; border-color: #8E0000 !important; color: {BRANCO} !important; }}
 .rodape {{ color: {CINZA}; font-size: 12px; margin-top: 18px; border-top: 1px solid {CINZA_LINHA}; padding-top: 10px;
            font-family: {FONTE}; }}
 </style>
