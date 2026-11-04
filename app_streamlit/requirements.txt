@@ -5,6 +5,5 @@ numpy==2.5.3
 pandas==3.0.5
 scikit-learn==1.9.1
 joblib==1.6.0
-# Depois de instalar, fixe a versão do Streamlit que funcionou aí
-# (pip show streamlit) trocando a linha abaixo por streamlit==<versão>.
-streamlit>=1.40
+# Versão fixa: sem isso, um novo deploy pode trocar o Streamlit sozinho.
+streamlit==1.66.1

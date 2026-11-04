@@ -113,6 +113,7 @@ def inserir_camada():
     erro = motor.validar_insercao([motor.Camada(**c) for c in camadas], nova, MATS)
     if erro:
         ss.erro = erro
+        ss.anim = None          # o desenho não muda: nada de repetir a animação atrás do aviso
         return
     camadas.append({"codigo": cod, "peso_t": round(float(peso), 2)})
     ss.anim = {"tipo": "camada", "cestao": ss.ativo, "camada": len(camadas) - 1}
@@ -224,6 +225,9 @@ section[data-testid="stSidebar"] details {{ border-color: #333; }}
              font-family: {FONTE}; }}
 .mat-info b {{ color: {PRETO}; }}
 div[data-testid="stMetricValue"] {{ font-size: 1.2rem; color: {PRETO}; font-weight: 700; }}
+div[role="dialog"] {{ border-top: 8px solid #C62828; }}
+.aviso-grave {{ font-family: {FONTE}; font-size: 19px; line-height: 1.45; color: {PRETO}; margin: 4px 0 8px; }}
+.aviso-grave small {{ display: block; margin-top: 10px; font-size: 15px; color: #555; }}
 .rodape {{ color: {CINZA}; font-size: 12px; margin-top: 18px; border-top: 1px solid {CINZA_LINHA}; padding-top: 10px;
            font-family: {FONTE}; }}
 </style>
@@ -236,6 +240,25 @@ div[data-testid="stMetricValue"] {{ font-size: 1.2rem; color: {PRETO}; font-weig
 # Sem linhas em branco: no Markdown do Streamlit, uma linha em branco encerra o bloco HTML
 # e o resto do CSS apareceria como texto na página.
 st.markdown("\n".join(linha for linha in CSS.splitlines() if linha.strip()), unsafe_allow_html=True)
+
+
+# ====================================================================== aviso central
+def abrir_aviso(mensagem):
+    """Aviso no meio da tela: a página fica bloqueada até o usuário clicar em OK."""
+    titulo = "⚠️ Não cabe no cestão" if mensagem.startswith("Não cabe") else "⚠️ Camada não inserida"
+
+    def corpo():
+        st.markdown(f'<div class="aviso-grave">{mensagem}<small>A camada não foi inserida.</small></div>',
+                    unsafe_allow_html=True)
+        if st.button("OK", type="primary", key="ok_aviso", width="stretch"):
+            ss.erro = None
+            st.rerun()
+
+    try:
+        janela = st.dialog(titulo, dismissible=False)      # sem X e sem fechar clicando fora
+    except TypeError:
+        janela = st.dialog(titulo)                         # versões antigas do Streamlit
+    janela(corpo)()
 
 
 # ====================================================================== barra lateral
@@ -359,8 +382,6 @@ with col_lado:
         with a3:
             st.button("🧹  Esvaziar", on_click=esvaziar_cestao, disabled=not cestoes[ss.ativo - 1],
                       width="stretch")
-        if ss.erro:
-            st.error(ss.erro)
 
     st.subheader("Como estão os cestões", anchor=False)
     if n_cestoes == 0:
@@ -477,3 +498,7 @@ with st.expander("Receita em tabela"):
         st.caption("Nenhuma camada ainda.")
 
 st.markdown('<div class="rodape">Modelo: média de 5 Gradient Boosting</div>', unsafe_allow_html=True)
+
+# ---------- aviso central (por último, com a página já desenhada atrás) ----------
+if ss.erro:
+    abrir_aviso(ss.erro)
