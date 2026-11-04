@@ -225,15 +225,15 @@ section[data-testid="stSidebar"] details {{ border-color: #333; }}
              font-family: {FONTE}; }}
 .mat-info b {{ color: {PRETO}; }}
 div[data-testid="stMetricValue"] {{ font-size: 1.2rem; color: {PRETO}; font-weight: 700; }}
-div[role="dialog"] {{ background: #FFD6D6 !important; border: 5px solid #C62828 !important; border-top-width: 12px !important; }}
-div[role="dialog"] h1, div[role="dialog"] h2, div[role="dialog"] h3 {{ color: #B71C1C !important; font-weight: 800 !important; }}
-div[role="dialog"] svg {{ color: #B71C1C; }}
-.aviso-grave {{ font-family: {FONTE}; font-size: 21px; font-weight: 800; line-height: 1.4; color: #8E0000; margin: 4px 0 8px; }}
-.aviso-grave small {{ display: block; margin-top: 10px; font-size: 15px; font-weight: 700; color: #8E0000; }}
+div[role="dialog"] {{ background: rgba(198, 40, 40, .82) !important; backdrop-filter: blur(4px); border: 4px solid #8E0000 !important; border-top-width: 10px !important; }}
+div[role="dialog"] h1, div[role="dialog"] h2, div[role="dialog"] h3 {{ color: {BRANCO} !important; font-weight: 800 !important; }}
+div[role="dialog"] svg {{ color: {BRANCO}; }}
+.aviso-grave {{ font-family: {FONTE}; font-size: 21px; font-weight: 800; line-height: 1.4; color: {BRANCO}; margin: 4px 0 8px; }}
+.aviso-grave small {{ display: block; margin-top: 10px; font-size: 15px; font-weight: 700; color: #FFE3E3; }}
 div[role="dialog"] .stButton > button, div[role="dialog"] button[data-testid^="stBaseButton"] {{
-    background: #C62828 !important; border-color: #C62828 !important; color: {BRANCO} !important; font-weight: 800; }}
+    background: {BRANCO} !important; border-color: {BRANCO} !important; color: #B71C1C !important; font-weight: 800; }}
 div[role="dialog"] .stButton > button:hover, div[role="dialog"] button[data-testid^="stBaseButton"]:hover {{
-    background: #8E0000 !important; border-color: #8E0000 !important; color: {BRANCO} !important; }}
+    background: #FFE3E3 !important; border-color: #FFE3E3 !important; color: #8E0000 !important; }}
 .rodape {{ color: {CINZA}; font-size: 12px; margin-top: 18px; border-top: 1px solid {CINZA_LINHA}; padding-top: 10px;
            font-family: {FONTE}; }}
 </style>
