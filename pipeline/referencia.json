@@ -1,0 +1,10 @@
+{
+ "cestoes": 3501,
+ "cargas_altas": 559,
+ "cestoes_teste": 515,
+ "minutos_teste": 130.8,
+ "soma_das_chances": 559.6034054927196,
+ "limiar_principal_TP0": 0.18298809177672704,
+ "limiar_principal_TP1": 0.3001602135305267,
+ "limiar_reserva_TP0": 0.18083324228168882
+}

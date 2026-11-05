@@ -1,0 +1,3 @@
+cd_corrida,is_carga_alta_carregamento_1,is_carga_alta_carregamento_2,qt_segundos_duracao_parada_carregamento_1,qt_segundos_duracao_parada_carregamento_2,is_carga_alta,qt_segundos_parada_carga_alta
+EX0001,0,1.0,0,180.0,1.0,180.0
+EX0002,1,,120,,,

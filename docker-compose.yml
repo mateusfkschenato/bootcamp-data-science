@@ -1,0 +1,48 @@
+# docker compose build                  monta a imagem
+# docker compose run --rm treino        do dado bruto até o modelo (~40 min)
+# docker compose run --rm previsao      prevê as corridas de previsao/entrada/
+# docker compose up app                 simulador em http://localhost:8501
+
+x-imagem: &imagem
+  image: carga-alta-evcomx:1.0
+  build: .
+
+services:
+  treino:
+    <<: *imagem
+    profiles: [treino]
+    entrypoint: ["python", "pipeline/treinar.py"]
+    volumes:
+      - .:/app                          # as etapas gravam os resultados nas pastas do projeto
+
+  previsao:
+    <<: *imagem
+    profiles: [previsao]
+    entrypoint: ["python", "pipeline/prever.py"]
+    volumes:
+      - ./selecao_algoritmos/modelo_final.joblib:/app/selecao_algoritmos/modelo_final.joblib:ro
+      - ./feature_selection/dataset_features_completo.csv:/app/feature_selection/dataset_features_completo.csv:ro
+      - ./feature_selection/features_finais.json:/app/feature_selection/features_finais.json:ro
+      - ./EDA/base.csv:/app/EDA/base.csv:ro
+      - ./original_dataset/VariavelResposta.csv:/app/original_dataset/VariavelResposta.csv:ro
+      - ./app_streamlit/dados_app:/app/app_streamlit/dados_app:ro
+      - ./previsao:/app/previsao
+
+  app:
+    <<: *imagem
+    working_dir: /app/app_streamlit     # o Streamlit acha o tema em .streamlit/config.toml
+    command: ["python", "-m", "streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8501", "--server.headless=true"]
+    user: "1000:1000"
+    environment:
+      HOME: /tmp
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./selecao_algoritmos/modelo_final.joblib:/app/selecao_algoritmos/modelo_final.joblib:ro
+      - ./app_streamlit/dados_app:/app/app_streamlit/dados_app:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8501/_stcore/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# Execuções do pipeline
+pipeline/logs/
+
+# Corridas reais da previsão (o exemplo fica no repositório)
+previsao/entrada/*
+!previsao/entrada/.gitkeep
+previsao/saida/*
+!previsao/saida/.gitkeep
+
+# Credenciais
+.env

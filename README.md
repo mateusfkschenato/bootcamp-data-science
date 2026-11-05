@@ -46,6 +46,31 @@ Numa aciaria, a sucata entra no forno elétrico a arco (FEA) em cestões, montad
 
 O limiar de alarme é o de **menos minutos** no passado (~0,18), não 0,5. O modelo para uso, re-treinado com todos os dados, está em [`selecao_algoritmos/modelo_final.joblib`](selecao_algoritmos/), e o app do simulador usa esse arquivo.
 
+### Por que o limiar de alarme é 0,18, e não 0,5
+
+Usar 0,5 faria sentido se os dois erros custassem o mesmo. Aqui, não custam:
+
+- **Alarme falso (FP):** 1 min, o tempo de reajustar a montagem (EVCOMX).
+- **Carga alta não detectada (FN):** a duração da parada, em média **3,9 min** por cestão (mediana de 2,85 min).
+
+Vale alarmar quando o custo esperado de não alarmar supera o de alarmar:
+
+$$p \times C_{FN} > (1 - p) \times C_{FP} \quad\Rightarrow\quad p > \frac{C_{FP}}{C_{FP} + C_{FN}}$$
+
+| Custo do FN usado na conta | Limiar teórico |
+|---|---|
+| Média (3,9 min) | 1 / 4,9 ≈ **0,20** |
+| Mediana (2,85 min) | 1 / 3,85 ≈ **0,26** |
+| O que 0,18 implica | FN ≈ **4,6 min** |
+
+**O limiar do modelo não sai dessa fórmula.** Ele é o que deu menos minutos perdidos nos dados passados: 0,178 no dev, usado no teste, e 0,183 no modelo para uso. A conta serve de conferência: o valor encontrado nos dados fica perto do que o custo prevê, e isso só funciona porque as chances do modelo estão calibradas (no dev, chance média de 16,0% para taxa real de 16,3%).
+
+No teste, o limiar do dev deu **131 min**, contra **124 min** do melhor limiar possível (0,19), que só se saberia olhando o teste.
+
+**O que 0,18 não significa:** não é "o modelo tem só 18% de certeza", nem sinal de modelo fraco. É o ponto a partir do qual alarmar compensa, dado que perder uma carga alta custa cerca de 4 vezes mais que um alarme falso. Com a taxa de carga alta em 16% dos cestões, esse limiar alarma em 29 de cada 100 cestões no teste.
+
+**O limiar depende da premissa.** Se o alarme certo também custar 1 min, o limiar de menos minutos sobe para **0,30**. O app mostra as duas opções.
+
 > **Como o projeto chegou aqui.** Até out/2026 o modelo era uma **Random Forest com 6 features**, escolhida pela PR-AUC na validação. Quando a EVCOMX deu o critério de minutos e confirmou o timing do cestão 1, a modelagem foi refeita ([`otimizacao_minutos/`](otimizacao_minutos/README.md): 168 configurações no dev, finalistas registrados antes, teste aberto uma vez). O vencedor virou o modelo oficial e **todas as etapas foram refeitas em cima dele**. O material da RF ficou em `historico_rf6/` dentro de cada pasta, e ela continua como linha de comparação nas tabelas.
 
 ---
@@ -73,6 +98,19 @@ original_dataset/ → EDA/ → feature_selection/ → selecao_algoritmos/ → an
 | *Registro* | Como o modelo oficial foi encontrado, o pré-registro dos finalistas e três cenários operacionais. | [`otimizacao_minutos/README.md`](otimizacao_minutos/README.md) |
 
 As bibliotecas e versões estão em [`requirements.txt`](requirements.txt). Cada pasta tem o script `.py` (células `#%%`) e o notebook `.ipynb` já executado.
+
+---
+
+## Como rodar com Docker
+
+```bash
+docker compose build                  # monta a imagem
+docker compose run --rm treino        # do dado bruto até o modelo (~40 min)
+docker compose run --rm previsao      # prevê as corridas de previsao/entrada/
+docker compose up app                 # simulador em http://localhost:8501
+```
+
+A imagem leva só código e bibliotecas; dados e modelo entram por volumes. Formato dos arquivos, avisos da previsão, conferências e limites estão em [`pipeline/README.md`](pipeline/README.md).
 
 ---
 
