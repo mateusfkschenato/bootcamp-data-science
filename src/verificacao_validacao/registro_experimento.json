@@ -2,7 +2,7 @@
  "modelo": "OFICIAL: média das probabilidades de 5 HistGradientBoostingClassifier, sem pesos de classe",
  "features": {
   "n": 121,
-  "arquivo": "feature_selection/features_finais.json",
+  "arquivo": "src/feature_selection/features_finais.json",
   "grupos": {
    "massa, volume e densidade": 24,
    "ordem, ciclos e posição": 23,
@@ -51,8 +51,8 @@
  "hash_dados": {
   "original_dataset/infos_camadas.csv": "f771f1419993f49c",
   "original_dataset/VariavelResposta.csv": "ce31df9475fdacf8",
-  "EDA/base.csv": "7f2c3681690b57cb",
-  "feature_selection/dataset_modelagem_fs.csv": "4c8fbc8a219c74d4"
+  "src/EDA/base.csv": "7f2c3681690b57cb",
+  "src/feature_selection/dataset_modelagem_fs.csv": "4c8fbc8a219c74d4"
  },
  "versoes": {
   "python": "3.13.18",

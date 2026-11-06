@@ -4,9 +4,9 @@ O app usa um "momento do forno" copiado de uma corrida real. Aqui o histórico �
 as corridas novas entram depois das corridas conhecidas, e histórico, ritmo e regime recente
 (`h_*`, `taxa_ca_ult*`, `gap_*`, `rel_*`, `rel2_*`) são refeitos sobre a série completa.
 
-As regras são as mesmas de EDA/transforma_dataset.py (limpeza) e de
-feature_selection/feature_selection.py (seções 2 e 4). pipeline/test_previsao.py confere,
-linha a linha, que o resultado bate com feature_selection/dataset_features_completo.csv.
+As regras são as mesmas de src/EDA/transforma_dataset.py (limpeza) e de
+src/feature_selection/feature_selection.py (seções 2 e 4). pipeline/test_previsao.py confere,
+linha a linha, que o resultado bate com src/feature_selection/dataset_features_completo.csv.
 """
 import sys
 from pathlib import Path
@@ -34,17 +34,17 @@ CALCULADAS = ("h_", "taxa_ca_ult", "gap_", "rel_", "rel2_")
 def carregar_historico() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """(cestões conhecidos, resultados conhecidos, tabela de materiais)."""
     import json
-    hist = pd.read_csv(RAIZ / "feature_selection" / "dataset_features_completo.csv")
+    hist = pd.read_csv(RAIZ / "src" / "feature_selection" / "dataset_features_completo.csv")
     for c in ["t_ini", "t_fim"]:
         hist[c] = pd.to_datetime(hist[c], utc=True, format="mixed")
     resposta = pd.read_csv(RAIZ / "original_dataset" / "VariavelResposta.csv")
-    base = pd.read_csv(RAIZ / "EDA" / "base.csv", dtype={"cd_codigo_material": str})
-    feats = json.loads((RAIZ / "feature_selection" / "features_finais.json").read_text(encoding="utf-8"))
+    base = pd.read_csv(RAIZ / "src" / "EDA" / "base.csv", dtype={"cd_codigo_material": str})
+    feats = json.loads((RAIZ / "src" / "feature_selection" / "features_finais.json").read_text(encoding="utf-8"))
     return hist, resposta, tabela_materiais(base, feats["features_oficial"])
 
 
 def limpar_camadas(cru: pd.DataFrame) -> pd.DataFrame:
-    """Mesma limpeza do EDA/transforma_dataset.py, para o formato do infos_camadas.csv."""
+    """Mesma limpeza do src/EDA/transforma_dataset.py, para o formato do infos_camadas.csv."""
     faltam = [c for c in COLUNAS_CAMADAS + ["dt_hora_consumo"] if c not in cru.columns]
     if faltam:
         raise ValueError(f"Faltam colunas no arquivo de camadas: {', '.join(faltam)}")

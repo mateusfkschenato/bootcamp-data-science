@@ -42,11 +42,11 @@ A fonte é a **Bai Jamjuree**, carregada do Google Fonts (precisa de internet; s
 
 ## Que modelo é esse
 
-É o **modelo oficial do projeto**: `selecao_algoritmos/modelo_final.joblib`, a média das probabilidades de 5 `HistGradientBoostingClassifier`, com 120 features + o resultado do cestão 1. No teste (24/jun a 4/ago/2026): PR-AUC 0,57 e 131 min de forno perdidos, contra 251 min sem modelo. O pacote é carregado uma vez só, com `@st.cache_resource`.
+É o **modelo oficial do projeto**: `src/selecao_algoritmos/modelo_final.joblib`, a média das probabilidades de 5 `HistGradientBoostingClassifier`, com 120 features + o resultado do cestão 1. No teste (24/jun a 4/ago/2026): PR-AUC 0,57 e 131 min de forno perdidos, contra 251 min sem modelo. O pacote é carregado uma vez só, com `@st.cache_resource`.
 
 | Grupo de features | Quantas | De onde o app tira |
 |---|---|---|
-| Receita do cestão (peso, volume, densidade, classes, materiais, ciclos, topo e fundo...) | 67 | Calculadas das camadas que você monta, com as regras de `feature_selection/feature_selection.py` |
+| Receita do cestão (peso, volume, densidade, classes, materiais, ciclos, topo e fundo...) | 67 | Calculadas das camadas que você monta, com as regras de `src/feature_selection/feature_selection.py` |
 | Cestão 1 → cestão 2 (`volume_c1_m3`, `delta_peso_12_t`, `mudou_composicao`...) | 6 | Calculadas da corrida montada |
 | Gusa líquida (`gusl_t`, `tem_gusl`, `carga3_solida_t`) | 3 | Do controle de gusa (o app não tem carga sólida no 3º carregamento) |
 | Histórico, ritmo e horário (`h_*`, `taxa_ca_ult*`, `gap_*`, `hora`, `turno`...) | 26 | Copiadas do **momento do forno** escolhido na tela (uma corrida real: típico, calmo ou agitado) |
@@ -66,7 +66,7 @@ O alarme dispara quando a chance passa do **limiar de minutos** que o pacote gua
 
 **Chance da corrida.** Depois de enviar, o resultado mostra a chance de a corrida dar carga alta em algum cestão: `1 − (1 − P₁) × (1 − P₂)`, com P₂ = chance do cestão 2 se o cestão 1 não der. É a regra da cadeia, sem supor cestões independentes. Nas 245 corridas do teste com dois cestões, com o `modelo_dev`, a média prevista foi 31% e a taxa real 27%. O alarme não usa esse número: continua no limiar de minutos de cada cestão.
 
-**Conferência.** O `test_motor.py` monta, para 400 corridas reais, a receita e o momento da própria corrida, e confere que as 120 features batem com o `feature_selection/dataset_features_completo.csv`. A única diferença é `num_camadas` em poucos cestões, em que os dados têm duas camadas com o mesmo número; no app, cada camada conta. Rodando em todas as 3.372 corridas com momento completo, também bate. Estimar baias e tempo de montagem muda a chance em 1,1 ponto percentual em média e troca o alarme em 2% dos cestões.
+**Conferência.** O `test_motor.py` monta, para 400 corridas reais, a receita e o momento da própria corrida, e confere que as 120 features batem com o `src/feature_selection/dataset_features_completo.csv`. A única diferença é `num_camadas` em poucos cestões, em que os dados têm duas camadas com o mesmo número; no app, cada camada conta. Rodando em todas as 3.372 corridas com momento completo, também bate. Estimar baias e tempo de montagem muda a chance em 1,1 ponto percentual em média e troca o alarme em 2% dos cestões.
 
 ## Entradas recusadas
 
@@ -104,6 +104,6 @@ Se o modelo ou as features mudarem, rode `python app_streamlit/preparar_dados_ap
 
 ## Publicar (bônus do exercício)
 
-O jeito mais simples é o **Streamlit Community Cloud**: suba o repositório para o GitHub, crie um app apontando para `app_streamlit/app.py` e ele usa o `requirements.txt` desta pasta. Para rodar, o app só precisa de `selecao_algoritmos/modelo_final.joblib` e da pasta `dados_app/`.
+O jeito mais simples é o **Streamlit Community Cloud**: suba o repositório para o GitHub, crie um app apontando para `app_streamlit/app.py` e ele usa o `requirements.txt` desta pasta. Para rodar, o app só precisa de `src/selecao_algoritmos/modelo_final.joblib` e da pasta `dados_app/`.
 
 Antes de publicar num link aberto, confirme com a EVCOMX: `dados_app/` vem dos dados reais deles.

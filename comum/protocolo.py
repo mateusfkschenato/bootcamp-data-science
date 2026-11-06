@@ -25,10 +25,10 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import make_pipeline
 
 RAIZ = Path(__file__).resolve().parents[1]
-ARQ_DATASET = RAIZ / "feature_selection" / "dataset_modelagem_fs.csv"
-ARQ_COMPLETO = RAIZ / "feature_selection" / "dataset_features_completo.csv"
-ARQ_FEATURES = RAIZ / "feature_selection" / "features_finais.json"
-ARQ_MODELO = RAIZ / "selecao_algoritmos" / "modelo_final.joblib"
+ARQ_DATASET = RAIZ / "src" / "feature_selection" / "dataset_modelagem_fs.csv"
+ARQ_COMPLETO = RAIZ / "src" / "feature_selection" / "dataset_features_completo.csv"
+ARQ_FEATURES = RAIZ / "src" / "feature_selection" / "features_finais.json"
+ARQ_MODELO = RAIZ / "src" / "selecao_algoritmos" / "modelo_final.joblib"
 
 MESES_WF = ["2025-11", "2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]
 MESES_CUSTO = MESES_WF[2:]          # minutos contados de jan a jun (nov/dez só "aquecem" o limiar)
@@ -154,6 +154,6 @@ def resumo_wf(w):
 
 # ---------------------------------------------------------------- uso
 def prever_pacote(pacote, X, chave="com_cestao1"):
-    """Chance de carga alta com o pacote salvo em selecao_algoritmos/modelo_final.joblib."""
+    """Chance de carga alta com o pacote salvo em src/selecao_algoritmos/modelo_final.joblib."""
     pk = pacote[chave]
     return np.mean([m.predict_proba(X[pk["features"]])[:, 1] for m in pk["modelos"]], axis=0)

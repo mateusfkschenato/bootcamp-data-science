@@ -22,7 +22,7 @@ TOL_CHANCE = 0.02
 @pytest.fixture(scope="module")
 def dados():
     hist, resposta, mats = fc.carregar_historico()
-    pacote = joblib.load(RAIZ / "selecao_algoritmos" / "modelo_final.joblib")
+    pacote = joblib.load(RAIZ / "src" / "selecao_algoritmos" / "modelo_final.joblib")
     cru = pd.read_csv(RAIZ / "original_dataset" / "infos_camadas.csv", na_values=["null"], dtype={"cd_codigo_material": str})
     ordem = hist[hist.nu_carregamento == 1].sort_values("t_ini").cd_corrida.tolist()
     return hist, resposta, mats, pacote, cru, ordem

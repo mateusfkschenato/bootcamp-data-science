@@ -42,7 +42,7 @@ Conclusão daquela rodada: com estes dados, o modelo chegou ao platô. Novas var
 | Regra: só o histórico | 0,358 | 147 | 41% |
 | Sem modelo | — | 251 | — |
 
-A análise completa desses números está em `analise_modelos/`.
+A análise completa desses números está em `src/analise_modelos/`.
 
 ### E se a operação mudasse? Três cenários (`cenarios_operacionais.py`)
 

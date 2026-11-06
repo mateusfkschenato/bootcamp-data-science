@@ -7,7 +7,7 @@
 # - **Validação:** ele funciona em dados novos, e dá para confiar nele fora do conjunto original?
 #
 # **Modelo verificado: o oficial**, a média de 5 Gradient Boosting com 121 features (120 + o
-# resultado do cestão 1), de `selecao_algoritmos/modelo_final.joblib`. A verificação da RF de 6
+# resultado do cestão 1), de `src/selecao_algoritmos/modelo_final.joblib`. A verificação da RF de 6
 # features (o antigo plano A) está guardada no histórico do Git.
 #
 # **Esta etapa não escolhe nada.** O script **para com erro** se algum número das etapas anteriores
@@ -50,9 +50,9 @@ from comum.protocolo import (ARQ_COMPLETO, ARQ_DATASET, C_FP, HGB, MESES_CUSTO, 
                              NOME_RESERVA, NOME_RF6, VARIANTES, carregar, familia, ler_features, melhor_limiar,
                              minutos, oof_dev, prever, prever_treinados, resumo_wf, treinar)
 
-PASTA = RAIZ / "verificacao_validacao"
+PASTA = RAIZ / "src" / "verificacao_validacao"
 (PASTA / "graficos").mkdir(exist_ok=True)
-SEL, ANA = RAIZ / "selecao_algoritmos", RAIZ / "analise_modelos"
+SEL, ANA = RAIZ / "src" / "selecao_algoritmos", RAIZ / "src" / "analise_modelos"
 pd.set_option("display.width", 220); pd.set_option("display.max_columns", 30); pd.set_option("display.max_colwidth", 90)
 plt.rcParams.update({"figure.dpi": 110, "axes.spines.top": False, "axes.spines.right": False,
                      "axes.grid": True, "grid.color": "#e5e5e5", "grid.linewidth": 0.6, "axes.axisbelow": True})
@@ -69,7 +69,7 @@ PREV = pd.read_csv(SEL / "previsoes_dev_teste.csv")
 RES = pd.read_csv(SEL / "resultado_teste.csv", index_col=0)
 PAC = joblib.load(SEL / "modelo_final.joblib"); PDEV = joblib.load(SEL / "modelo_dev.joblib")
 resp = pd.read_csv(RAIZ / "original_dataset/VariavelResposta.csv")
-base = pd.read_csv(RAIZ / "EDA/base.csv", dtype={"cd_codigo_material": str})
+base = pd.read_csv(RAIZ / "src/EDA/base.csv", dtype={"cd_codigo_material": str})
 bruto = pd.read_csv(RAIZ / "original_dataset/infos_camadas.csv", dtype={"cd_codigo_material": str})
 chave = ["cd_corrida", "nu_carregamento"]
 LIM = RES.loc[NOME_OFICIAL, "limiar"]
@@ -667,14 +667,14 @@ def h(p):
 
 registro = {
     "modelo": "OFICIAL: média das probabilidades de 5 HistGradientBoostingClassifier, sem pesos de classe",
-    "features": {"n": len(F_OF), "arquivo": "feature_selection/features_finais.json", "grupos": {k: len(v) for k, v in GRUPOS.items()}},
+    "features": {"n": len(F_OF), "arquivo": "src/feature_selection/features_finais.json", "grupos": {k: len(v) for k, v in GRUPOS.items()}},
     "variantes": VARIANTES, "semente": 42, "limiar_dev": LIM, "limiar_uso_TP0": PAC["com_cestao1"]["limiar_minutos_TP0"],
     "split": "70/15/15 temporal por corrida; dev = treino + validação; walk-forward mensal nov/25–jun/26",
     "regua": "minutos perdidos: FN = duração da parada; FP = 1 min; TP = 0 (cenário TP=1 também reportado)",
     "resultado_teste": {"PR-AUC": RES.loc[NOME_OFICIAL, "PR-AUC teste"], "minutos": RES.loc[NOME_OFICIAL, "min perdidos teste"],
                         "sem_modelo": SEM_TESTE, "economia_%": RES.loc[NOME_OFICIAL, "economia teste %"]},
     "hash_dados": {p: h(RAIZ / p) for p in ["original_dataset/infos_camadas.csv", "original_dataset/VariavelResposta.csv",
-                                            "EDA/base.csv", "feature_selection/dataset_modelagem_fs.csv"]},
+                                            "src/EDA/base.csv", "src/feature_selection/dataset_modelagem_fs.csv"]},
     "versoes": {"python": platform.python_version(), "numpy": np.__version__, "pandas": pd.__version__,
                 "scikit-learn": sklearn.__version__, "scipy": scipy.__version__},
     "antigo": "RF 6 features (plano A): ver histórico do Git",

@@ -1,6 +1,6 @@
 ## Seleção de Algoritmos e Modelagem — Predição de Carga Alta (EVCOMX)
 
-Segue a **Aula 05 do bootcamp** (Seleção de Algoritmos e Modelagem) e o **Guia de Modelagem Preditiva da EVCOMX** (§4), e continua `feature_selection/`.
+Segue a **Aula 05 do bootcamp** (Seleção de Algoritmos e Modelagem) e o **Guia de Modelagem Preditiva da EVCOMX** (§4), e continua `src/feature_selection/`.
 
 **Algoritmo oficial: média das probabilidades de 5 `HistGradientBoostingClassifier`**, sem pesos de classe, com as **121 features oficiais** (120 + `carga_alta_c1`, o resultado do cestão 1).
 
@@ -8,8 +8,8 @@ Segue a **Aula 05 do bootcamp** (Seleção de Algoritmos e Modelagem) e o **Guia
 
 ### Como rodar
 
-1. `EDA/transforma_dataset.py` e `feature_selection/feature_selection.py`.
-2. `selecao_algoritmos/selecao_algoritmos.py` (células `#%%`) ou `selecao_algoritmos.ipynb` (mesmo conteúdo, já executado). Leva ~15 min.
+1. `src/EDA/transforma_dataset.py` e `src/feature_selection/feature_selection.py`.
+2. `src/selecao_algoritmos/selecao_algoritmos.py` (células `#%%`) ou `selecao_algoritmos.ipynb` (mesmo conteúdo, já executado). Leva ~15 min.
 
 O protocolo comum (régua de minutos, limiar, walk-forward e a receita dos 5 HGB) está em `comum/protocolo.py`. O script **para com erro** se a regra de escolha deixar de apontar para o oficial.
 
@@ -50,7 +50,7 @@ Para cada mês de nov/25 a jun/26, treina com tudo antes e prevê o mês. Os min
 
 ### A regra de escolha e a escada (seção 8)
 
-- **Regra 1, declarada antes de abrir o teste** (`otimizacao_minutos/finalistas_dev_pre_registro.csv`): entre os finalistas, fica o de **menos minutos no walk-forward**, com PR-AUC pelo menos a da RF do grupo. Resultado: **o oficial** (616 min). O resultado do cestão 1 entrou com a condição "se a EVCOMX confirmar o timing", e a EVCOMX confirmou em 31/out/2026.
+- **Regra 1, declarada antes de abrir o teste** (`src/otimizacao_minutos/finalistas_dev_pre_registro.csv`): entre os finalistas, fica o de **menos minutos no walk-forward**, com PR-AUC pelo menos a da RF do grupo. Resultado: **o oficial** (616 min). O resultado do cestão 1 entrou com a condição "se a EVCOMX confirmar o timing", e a EVCOMX confirmou em 31/out/2026.
 - **Regra 2, a escada (slide 33):** um degrau mais simples (linear < árvore < floresta < boosting) toma o lugar se **empatar nas duas réguas**: minutos a até 30 min e PR-AUC a até 0,02. Nenhum toma.
 - **A regressão logística empata nos minutos (611 × 616), mas perde na ordem dos cestões:** PR-AUC 0,46 × 0,50 no walk-forward e 0,35 × 0,45 na validação, os dois fora do ruído. Ela não toma o lugar, mas fica registrada como a **alternativa simples** a reavaliar quando houver um lote novo de dados. Ela não é medida no teste: não era finalista, e o teste não serve para escolher.
 - As florestas com 121 features não chegam perto nos minutos (693–741). O que faz a diferença é o Gradient Boosting, melhor justamente na faixa de recall de 60–80%, onde cai o limiar de menor custo.
@@ -68,7 +68,7 @@ Para cada mês de nov/25 a jun/26, treina com tudo antes e prevê o mês. Os min
 | `it=150` | 0,481 | 644 |
 | **Média das 5 (oficial)** | **0,500** | **616** |
 
-Escolher a melhor variante (576 min) seria otimista: com muitas tentativas, a melhor tende a ter sorte. A média depende menos de um ajuste específico. Ao todo, 168 configurações foram testadas na otimização (`otimizacao_minutos/experimentos_log.csv`).
+Escolher a melhor variante (576 min) seria otimista: com muitas tentativas, a melhor tende a ter sorte. A média depende menos de um ajuste específico. Ao todo, 168 configurações foram testadas na otimização (`src/otimizacao_minutos/experimentos_log.csv`).
 
 ### Limiar de decisão (seção 9)
 

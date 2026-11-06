@@ -37,13 +37,13 @@ Roda, em ordem, os scripts que já existem em cada pasta, sem alterá-los. Para 
 | Etapa | O que faz |
 |---|---|
 | `dados` | Confere os 4 arquivos de `original_dataset/` |
-| `limpeza` | `EDA/transforma_dataset.py` |
-| `eda` | `EDA/EDA.py` |
-| `features` | `feature_selection/feature_selection.py` |
-| `selecao` | `selecao_algoritmos/selecao_algoritmos.py`: gera `modelo_final.joblib` |
-| `analise` | `analise_modelos/analise_modelos.py` |
-| `verificacao` | `verificacao_validacao/verificacao_validacao.py` |
-| `interpretacao` | `interpretacao_modelos/interpretacao_modelos.py` |
+| `limpeza` | `src/EDA/transforma_dataset.py` |
+| `eda` | `src/EDA/EDA.py` |
+| `features` | `src/feature_selection/feature_selection.py` |
+| `selecao` | `src/selecao_algoritmos/selecao_algoritmos.py`: gera `modelo_final.joblib` |
+| `analise` | `src/analise_modelos/analise_modelos.py` |
+| `verificacao` | `src/verificacao_validacao/verificacao_validacao.py` |
+| `interpretacao` | `src/interpretacao_modelos/interpretacao_modelos.py` |
 | `app` | `app_streamlit/preparar_dados_app.py` |
 | `conferencia` | Compara o modelo com `pipeline/referencia.json` |
 | `testes` | `app_streamlit/test_motor.py` e `pipeline/test_previsao.py` |

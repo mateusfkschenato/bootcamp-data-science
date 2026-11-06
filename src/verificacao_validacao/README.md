@@ -4,7 +4,7 @@ Segue a **Aula 07 do bootcamp** (Verificação e Validação de Modelos) e o **G
 - **Verificação:** o modelo foi construído e executado como dissemos?
 - **Validação:** ele funciona em dados novos, e dá para confiar nele fora do conjunto original?
 
-**Modelo verificado: o oficial**, a média de 5 Gradient Boosting com 121 features (120 + o resultado do cestão 1), de `selecao_algoritmos/modelo_final.joblib`.
+**Modelo verificado: o oficial**, a média de 5 Gradient Boosting com 121 features (120 + o resultado do cestão 1), de `src/selecao_algoritmos/modelo_final.joblib`.
 
 > **Antes (out/2026), esta pasta verificava a Random Forest de 6 features** (31 conferências, critérios de aceitação em orçamento de alarmes).
 
@@ -12,8 +12,8 @@ Segue a **Aula 07 do bootcamp** (Verificação e Validação de Modelos) e o **G
 
 ### Como rodar
 
-1. As etapas anteriores, em ordem (a última é `analise_modelos/analise_modelos.py`).
-2. `verificacao_validacao/verificacao_validacao.py` (células `#%%`) ou `verificacao_validacao.ipynb` (mesmo conteúdo, já executado). Leva ~10 min.
+1. As etapas anteriores, em ordem (a última é `src/analise_modelos/analise_modelos.py`).
+2. `src/verificacao_validacao/verificacao_validacao.py` (células `#%%`) ou `verificacao_validacao.ipynb` (mesmo conteúdo, já executado). Leva ~10 min.
 
 Para recalcular a receita com camadas alteradas (erro de balança, corte de peso), usa `comum/receita.py`, que reaproveita a conta do app (`app_streamlit/motor.py`, conferida contra o dataset).
 

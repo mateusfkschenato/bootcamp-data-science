@@ -2,7 +2,7 @@
 # # Seleção de Algoritmos e Modelagem — Predição de Carga Alta (EVCOMX)
 #
 # Segue a **Aula 05 do bootcamp** (slides citados como "slide N") e o Guia de Modelagem da EVCOMX
-# (§4), e continua `feature_selection/`.
+# (§4), e continua `src/feature_selection/`.
 #
 # **Algoritmo oficial: média das probabilidades de 5 `HistGradientBoostingClassifier`** com
 # hiperparâmetros levemente diferentes, sem pesos de classe, com as 121 features oficiais
@@ -28,7 +28,7 @@
 # | 7. Conferir no teste, uma única vez (slide 35) | 10 |
 # | Modelo para uso e arquivos | 11 |
 #
-# **Rode antes** `EDA/transforma_dataset.py` e `feature_selection/feature_selection.py`.
+# **Rode antes** `src/EDA/transforma_dataset.py` e `src/feature_selection/feature_selection.py`.
 # Leva ~15 min (cada algoritmo treina 8 vezes no walk-forward).
 
 # %%
@@ -58,7 +58,7 @@ from comum.protocolo import (ARQ_COMPLETO, C_FP, FINAL6, MESES_CUSTO, MESES_WF, 
                              NOME_REGRA, NOME_RF6, RF6, VARIANTES, HGB, carregar, familia, ler_features,
                              melhor_limiar, minutos, minutos_wf, oof_dev, prever, resumo_wf)
 
-PASTA = RAIZ / "selecao_algoritmos"
+PASTA = RAIZ / "src" / "selecao_algoritmos"
 (PASTA / "graficos").mkdir(exist_ok=True)
 pd.set_option("display.width", 220); pd.set_option("display.max_columns", 30)
 plt.rcParams.update({"figure.dpi": 110, "axes.spines.top": False, "axes.spines.right": False,
@@ -246,7 +246,7 @@ plt.tight_layout(); plt.savefig(PASTA / "graficos/01_algoritmos_minutos_e_prauc.
 # %% [markdown]
 # ## 7. Hiperparâmetros: por que a média de 5 (slide 24)
 #
-# Na otimização foram testadas 168 configurações (`otimizacao_minutos/experimentos_log.csv`). A família
+# Na otimização foram testadas 168 configurações (`src/otimizacao_minutos/experimentos_log.csv`). A família
 # "Gradient Boosting com todas as features" deu os menores minutos em **todas** as variações de
 # hiperparâmetro. Escolher a melhor delas seria otimista (o melhor de muitos testes tende a ter
 # sorte). Por isso o oficial é a **média de 5 variações próximas** (`learning_rate` 0,03–0,05,
@@ -297,7 +297,7 @@ desb.round(3)
 #
 # ## 8. A escada e a regra de escolha (slide 33)
 #
-# **Regra 1, declarada antes de abrir o teste** (`otimizacao_minutos/finalistas_dev_pre_registro.csv`):
+# **Regra 1, declarada antes de abrir o teste** (`src/otimizacao_minutos/finalistas_dev_pre_registro.csv`):
 # entre os **finalistas** registrados, fica o de **menos minutos no walk-forward**, desde que a PR-AUC
 # no walk-forward seja pelo menos a da RF do grupo. O resultado do cestão 1 entrou com a condição
 # "se a EVCOMX confirmar o timing", e a EVCOMX confirmou (31/out/2026).
@@ -385,7 +385,7 @@ plt.tight_layout(); plt.savefig(PASTA / "graficos/03_custo_por_limiar_dev.png", 
 # cargas altas). O limiar vem do walk-forward do dev.
 #
 # **Transparência.** Este teste foi aberto uma vez na otimização por minutos (31/out/2026), só para
-# os finalistas registrados antes (`otimizacao_minutos/finalistas_dev_pre_registro.csv`). O código
+# os finalistas registrados antes (`src/otimizacao_minutos/finalistas_dev_pre_registro.csv`). O código
 # aqui refaz exatamente a mesma conta, com os mesmos números. Os algoritmos que não eram finalistas
 # (logística, árvore, florestas com 121, 1 HGB) **não são medidos no teste**: o teste não serve
 # para escolher. O grupo já tinha visto este teste nas rodadas da RF; por isso nada foi escolhido

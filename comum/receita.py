@@ -25,7 +25,7 @@ Camada = motor.Camada
 
 
 def tabela_materiais(base, features):
-    """Classe, densidade, rendimento e energia de cada material, tirados do EDA/base.csv."""
+    """Classe, densidade, rendimento e energia de cada material, tirados do src/EDA/base.csv."""
     mats = (base.drop_duplicates("cd_codigo_material").set_index("cd_codigo_material")
             .rename(columns={"tp_material": "classe", "Densidade t/m3": "densidade", "Rendimento Metálico %": "rendimento",
                              "Energia Elétrica": "energia_kwh_t"})[["classe", "densidade", "rendimento", "energia_kwh_t"]])

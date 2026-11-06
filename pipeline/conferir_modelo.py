@@ -21,9 +21,9 @@ TOLERANCIA = 1e-9
 
 
 def medir() -> dict:
-    pac = joblib.load(RAIZ / "selecao_algoritmos" / "modelo_final.joblib")
+    pac = joblib.load(RAIZ / "src" / "selecao_algoritmos" / "modelo_final.joblib")
     D, _, TESTE = carregar()
-    res = pd.read_csv(RAIZ / "selecao_algoritmos" / "resultado_teste.csv", index_col=0).loc[NOME_OFICIAL]
+    res = pd.read_csv(RAIZ / "src" / "selecao_algoritmos" / "resultado_teste.csv", index_col=0).loc[NOME_OFICIAL]
     chances = prever_pacote(pac, D)
     return {"cestoes": int(len(D)), "cargas_altas": int(D.carga_alta.sum()), "cestoes_teste": int(len(TESTE)),
             "minutos_teste": float(res["min perdidos teste"]), "soma_das_chances": float(np.sum(chances)),

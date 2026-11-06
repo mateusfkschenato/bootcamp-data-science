@@ -20,10 +20,10 @@ services:
     profiles: [previsao]
     entrypoint: ["python", "pipeline/prever.py"]
     volumes:
-      - ./selecao_algoritmos/modelo_final.joblib:/app/selecao_algoritmos/modelo_final.joblib:ro
-      - ./feature_selection/dataset_features_completo.csv:/app/feature_selection/dataset_features_completo.csv:ro
-      - ./feature_selection/features_finais.json:/app/feature_selection/features_finais.json:ro
-      - ./EDA/base.csv:/app/EDA/base.csv:ro
+      - ./src/selecao_algoritmos/modelo_final.joblib:/app/src/selecao_algoritmos/modelo_final.joblib:ro
+      - ./src/feature_selection/dataset_features_completo.csv:/app/src/feature_selection/dataset_features_completo.csv:ro
+      - ./src/feature_selection/features_finais.json:/app/src/feature_selection/features_finais.json:ro
+      - ./src/EDA/base.csv:/app/src/EDA/base.csv:ro
       - ./original_dataset/VariavelResposta.csv:/app/original_dataset/VariavelResposta.csv:ro
       - ./app_streamlit/dados_app:/app/app_streamlit/dados_app:ro
       - ./previsao:/app/previsao
@@ -38,7 +38,7 @@ services:
     ports:
       - "8501:8501"
     volumes:
-      - ./selecao_algoritmos/modelo_final.joblib:/app/selecao_algoritmos/modelo_final.joblib:ro
+      - ./src/selecao_algoritmos/modelo_final.joblib:/app/src/selecao_algoritmos/modelo_final.joblib:ro
       - ./app_streamlit/dados_app:/app/app_streamlit/dados_app:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8501/_stcore/health')"]

@@ -13,8 +13,8 @@ Esta pasta entrega o **dataset de modelagem** desse modelo (`dataset_modelagem_f
 
 ### Como rodar
 
-1. `EDA/transforma_dataset.py`: gera o `EDA/base.csv` limpo.
-2. `feature_selection/feature_selection.py` (células `#%%`) ou `feature_selection_carga_alta.ipynb` (mesmo conteúdo, já executado). Leva ~15 min, por causa da seção 9.
+1. `src/EDA/transforma_dataset.py`: gera o `src/EDA/base.csv` limpo.
+2. `src/feature_selection/feature_selection.py` (células `#%%`) ou `feature_selection_carga_alta.ipynb` (mesmo conteúdo, já executado). Leva ~15 min, por causa da seção 9.
 
 O código acha a raiz do projeto sozinho. O protocolo comum (minutos, walk-forward, receita dos 5 HGB) vem de `comum/protocolo.py`. **Toda escolha usa só treino + validação; o teste não é aberto nesta etapa.**
 

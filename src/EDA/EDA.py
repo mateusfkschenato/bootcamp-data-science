@@ -34,7 +34,7 @@ import matplotlib.pyplot as plt     # gráficos
 
 # %% PASSO 2 - Ler os arquivos
 base = pd.read_csv("base.csv")
-resposta = pd.read_csv("../original_dataset/VariavelResposta.csv")
+resposta = pd.read_csv("../../original_dataset/VariavelResposta.csv")
 
 print("base:", base.shape)          # (linhas, colunas)
 print("resposta:", resposta.shape)
@@ -127,7 +127,7 @@ print("Mesma corrida/carregamento/camada repetida:", base.duplicated(colunas_cha
 # Depois (e-mail do Guima, 21/out/2026): camadas de 10 kg e 100 kg também
 # podem ser desconsideradas; "dificilmente temos camadas com menos de
 # 2000kg". O corte usado na Parte A passou a ser < 2.000 kg.
-camadas_brutas = pd.read_csv("../original_dataset/infos_camadas.csv", na_values=["null"])
+camadas_brutas = pd.read_csv("../../original_dataset/infos_camadas.csv", na_values=["null"])
 peso_bruto = camadas_brutas["qt_peso_carregamento"]
 peso_zero = camadas_brutas[peso_bruto == 0]
 print("Linhas com peso 0 no bruto (removidas na Parte A):", len(peso_zero))
@@ -248,7 +248,7 @@ def pct(valor, casas=1):
 
 # ---------- Ler e preparar os dados (base pra todos os gráficos) ----------
 base = pd.read_csv("base.csv")
-resposta = pd.read_csv("../original_dataset/VariavelResposta.csv")
+resposta = pd.read_csv("../../original_dataset/VariavelResposta.csv")
 
 if not pd.api.types.is_numeric_dtype(base["Densidade t/m3"]):
     base["Densidade t/m3"] = base["Densidade t/m3"].str.replace(",", ".").astype(float)
@@ -325,7 +325,7 @@ flag_c2_sem_c2 = (
 ).sum()
 
 problemas = {
-    "Peso < 2 t (inclui zero), removidas (linhas)": (pd.read_csv("../original_dataset/infos_camadas.csv", na_values=["null"])["qt_peso_carregamento"] < 2000).sum(),
+    "Peso < 2 t (inclui zero), removidas (linhas)": (pd.read_csv("../../original_dataset/infos_camadas.csv", na_values=["null"])["qt_peso_carregamento"] < 2000).sum(),
     "Cestões acima de 70 t ou 78 m³ (cestões)": excedem,
     "Sem horário, fora do GUSL (linhas)": (base["dt_hora_consumo"].isnull() & ~eh_gusl).sum(),
     "Carreg. 3 com sucata, não GUSL (linhas)": ((base["nu_carregamento"] == 3) & ~eh_gusl).sum(),
@@ -940,7 +940,7 @@ print("\nOcorrências de CAL/COQUE no base.csv:",
 # =====================================================================
 # ITEM 9 — OS SINAIS QUE O MODELO OFICIAL USA
 # O modelo oficial do projeto (média de 5 Gradient Boosting, 121 features; ver
-# selecao_algoritmos/) se apoia muito em três informações que NÃO estão na receita do
+# src/selecao_algoritmos/) se apoia muito em três informações que NÃO estão na receita do
 # cestão. Antes de modelar, vale ver nos dados brutos que elas existem e o tamanho delas:
 #   1. histórico do forno: carga alta puxa carga alta;
 #   2. gusa líquida (carregamento 3): corridas sem gusa quase não dão carga alta;
@@ -957,7 +957,7 @@ import matplotlib.pyplot as plt
 os.makedirs("graficos", exist_ok=True)
 AZUL, VERMELHO, CINZA, LARANJA = "#2b6cb0", "#c0392b", "#7f8c8d", "#dd8a2e"
 base = pd.read_csv("base.csv")
-resposta = pd.read_csv("../original_dataset/VariavelResposta.csv")
+resposta = pd.read_csv("../../original_dataset/VariavelResposta.csv")
 base["dt_hora_consumo"] = pd.to_datetime(base["dt_hora_consumo"], utc=True, format="mixed")
 
 # ordem das corridas pelo início do cestão 1 (só corridas com receita registrada)

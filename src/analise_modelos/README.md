@@ -1,6 +1,6 @@
 ## Análise de Modelos e Métricas — Predição de Carga Alta (EVCOMX)
 
-Segue a **Aula 06 do bootcamp** (Análise de Modelos e Métricas de Desempenho) e o **Guia de Modelagem Preditiva da EVCOMX** (§5), e continua `selecao_algoritmos/`. A seleção escolheu o modelo. Aqui medimos **o que ele entrega**, com as métricas certas, e traduzimos os erros para a língua da operação.
+Segue a **Aula 06 do bootcamp** (Análise de Modelos e Métricas de Desempenho) e o **Guia de Modelagem Preditiva da EVCOMX** (§5), e continua `src/selecao_algoritmos/`. A seleção escolheu o modelo. Aqui medimos **o que ele entrega**, com as métricas certas, e traduzimos os erros para a língua da operação.
 
 **Modelo analisado: o oficial**, a média de 5 Gradient Boosting com 121 features (120 + o resultado do cestão 1). Ao lado dele: a reserva (sem o cestão 1), a versão com histórico "lag2", a **RF de 6 features (o antigo plano A)** e a regra do histórico.
 
@@ -8,8 +8,8 @@ Segue a **Aula 06 do bootcamp** (Análise de Modelos e Métricas de Desempenho) 
 
 ### Como rodar
 
-1. As etapas anteriores, em ordem (a última é `selecao_algoritmos/selecao_algoritmos.py`).
-2. `analise_modelos/analise_modelos.py` (células `#%%`) ou `analise_modelos.ipynb` (mesmo conteúdo, já executado). Leva ~1 min.
+1. As etapas anteriores, em ordem (a última é `src/selecao_algoritmos/selecao_algoritmos.py`).
+2. `src/analise_modelos/analise_modelos.py` (células `#%%`) ou `analise_modelos.ipynb` (mesmo conteúdo, já executado). Leva ~1 min.
 
 **Não escolhe nada.** Lê as previsões da seleção (`previsoes_dev_teste.csv`): no dev, as do walk-forward mensal (sempre fora da amostra); no teste, as dos modelos treinados no dev. Duas conferências automáticas: o oficial re-treinado aqui dá **as mesmas chances** da seleção, e os minutos do teste **batem** com `resultado_teste.csv`.
 

@@ -6,11 +6,11 @@ ou as features mudarem:
     python app_streamlit/preparar_dados_app.py
 
 Lê:
-  EDA/base.csv                                (camadas limpas, corte de 2.000 kg)
-  feature_selection/dataset_features_completo.csv  (as 120 features + resultado do cestão 1)
-  feature_selection/features_finais.json           (lista de features do modelo)
-  selecao_algoritmos/modelo_final.joblib           (limiares de minutos)
-  feature_selection/dataset_modelagem_fs.csv  (referência do treino para o painel)
+  src/EDA/base.csv                                (camadas limpas, corte de 2.000 kg)
+  src/feature_selection/dataset_features_completo.csv  (as 120 features + resultado do cestão 1)
+  src/feature_selection/features_finais.json           (lista de features do modelo)
+  src/selecao_algoritmos/modelo_final.joblib           (limiares de minutos)
+  src/feature_selection/dataset_modelagem_fs.csv  (referência do treino para o painel)
   original_dataset/VariavelResposta.csv       (gusa e duração das paradas)
 Escreve:
   dados_app/materiais_app.csv   propriedades e camada típica de cada material
@@ -29,12 +29,12 @@ RAIZ = APP.parent
 SAIDA = APP / "dados_app"
 SAIDA.mkdir(exist_ok=True)
 
-base = pd.read_csv(RAIZ / "EDA" / "base.csv", dtype={"cd_codigo_material": str})
-dm = pd.read_csv(RAIZ / "feature_selection" / "dataset_features_completo.csv")
-feats = json.loads((RAIZ / "feature_selection" / "features_finais.json").read_text(encoding="utf-8"))
+base = pd.read_csv(RAIZ / "src" / "EDA" / "base.csv", dtype={"cd_codigo_material": str})
+dm = pd.read_csv(RAIZ / "src" / "feature_selection" / "dataset_features_completo.csv")
+feats = json.loads((RAIZ / "src" / "feature_selection" / "features_finais.json").read_text(encoding="utf-8"))
 F = feats["features_principal"]
-pacote = joblib.load(RAIZ / "selecao_algoritmos" / "modelo_final.joblib")
-fs = pd.read_csv(RAIZ / "feature_selection" / "dataset_modelagem_fs.csv")
+pacote = joblib.load(RAIZ / "src" / "selecao_algoritmos" / "modelo_final.joblib")
+fs = pd.read_csv(RAIZ / "src" / "feature_selection" / "dataset_modelagem_fs.csv")
 resposta = pd.read_csv(RAIZ / "original_dataset" / "VariavelResposta.csv")
 
 # ---------------------------------------------------------------- materiais
@@ -126,7 +126,7 @@ dur = pd.concat([resposta.loc[resposta.is_carga_alta_carregamento_1 == 1, "qt_se
                  resposta.loc[resposta.is_carga_alta_carregamento_2 == 1, "qt_segundos_duracao_parada_carregamento_2"]]) / 60
 
 config = {
-    "modelo": {"arquivo": "selecao_algoritmos/modelo_final.joblib",
+    "modelo": {"arquivo": "src/selecao_algoritmos/modelo_final.joblib",
                "descricao": "média de 5 HistGradientBoosting, 120 features + resultado do cestão 1",
                "n_features": len(F)},
     "limiares": {

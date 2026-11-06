@@ -28,7 +28,7 @@ Numa aciaria, a sucata entra no forno elétrico a arco (FEA) em cestões, montad
 **O critério de negócio vem da EVCOMX:** o melhor modelo é o que faz **perder menos minutos de forno**. Uma carga alta não detectada custa a duração da parada (~4 min em média); um alarme falso custa 1 min, o tempo de reajustar a montagem.
 
 <p align="center">
-  <img src="selecao_algoritmos/graficos/04_teste_minutos_e_matriz.png" width="860" alt="Minutos perdidos no teste por modelo e matriz de confusão do modelo oficial">
+  <img src="src/selecao_algoritmos/graficos/04_teste_minutos_e_matriz.png" width="860" alt="Minutos perdidos no teste por modelo e matriz de confusão do modelo oficial">
 </p>
 <p align="center"><sub>No teste (24/jun a 4/ago/2026), sem modelo o forno perdeu 251 min. Com o modelo oficial, 131 min (48% a menos).</sub></p>
 
@@ -46,7 +46,7 @@ Numa aciaria, a sucata entra no forno elétrico a arco (FEA) em cestões, montad
 | Regra: só o histórico do forno | 0,358 | 147 | 41% |
 | Sem modelo | — | 251 | — |
 
-O limiar de alarme é o de **menos minutos** no passado (~0,18), não 0,5. O modelo para uso, re-treinado com todos os dados, está em [`selecao_algoritmos/modelo_final.joblib`](selecao_algoritmos/), e o app do simulador usa esse arquivo.
+O limiar de alarme é o de **menos minutos** no passado (~0,18), não 0,5. O modelo para uso, re-treinado com todos os dados, está em [`src/selecao_algoritmos/modelo_final.joblib`](src/selecao_algoritmos/), e o app do simulador usa esse arquivo.
 
 ### Por que o limiar de alarme é 0,18, e não 0,5
 
@@ -63,7 +63,20 @@ Com o FN médio de 3,9 min, a conta dá 1 / 4,9 ≈ **0,20**. O limiar do modelo
 
 **O limiar depende da premissa.** Se o alarme certo também custar 1 min, o limiar de menos minutos sobe para **0,30**. O app mostra as duas opções.
 
-> **Como o projeto chegou aqui.** Até out/2026 o modelo era uma **Random Forest com 6 features**, escolhida pela PR-AUC na validação. Quando a EVCOMX deu o critério de minutos e confirmou o timing do cestão 1, a modelagem foi refeita ([`otimizacao_minutos/`](otimizacao_minutos/README.md): 168 configurações no dev, finalistas registrados antes, teste aberto uma vez). O vencedor virou o modelo oficial e **todas as etapas foram refeitas em cima dele**. O material da RF saiu do repositório (fica no histórico do Git, commit `f849472`), e ela continua como linha de comparação nas tabelas.
+> **Como o projeto chegou aqui.** Até out/2026 o modelo era uma **Random Forest com 6 features**, escolhida pela PR-AUC na validação. Quando a EVCOMX deu o critério de minutos e confirmou o timing do cestão 1, a modelagem foi refeita ([`src/otimizacao_minutos/`](src/otimizacao_minutos/README.md): 168 configurações no dev, finalistas registrados antes, teste aberto uma vez). O vencedor virou o modelo oficial e **todas as etapas foram refeitas em cima dele**. O material da RF saiu do repositório (fica no histórico do Git, commit `f849472`), e ela continua como linha de comparação nas tabelas.
+
+---
+
+## Onde está cada coisa
+
+```
+pipeline/           comece aqui: treino e previsão, do dado bruto ao modelo
+app_streamlit/      simulador da corrida
+src/                as etapas de cada aula, com scripts, notebooks e resultados
+comum/              protocolo usado por todas as etapas
+original_dataset/   dados brutos da EVCOMX
+previsao/           entrada e saída das corridas novas
+```
 
 ---
 
@@ -80,16 +93,16 @@ original_dataset/ → EDA/ → feature_selection/ → selecao_algoritmos/ → an
 
 | Etapa (aula) | O que se fez | Detalhes |
 |---|---|---|
-| **EDA** | Junta as 4 tabelas, limpa (camadas abaixo de 2.000 kg saem), investiga os dados. Novo item 9: os três sinais que o modelo oficial mais usa (histórico do forno, gusa líquida e cestão 1 → cestão 2). | [`EDA/README.md`](EDA/README.md) |
-| **Feature selection** | 84 candidatas da receita + 36 novas + o resultado do cestão 1 = **121 features**, organizadas em 10 grupos. Filtro, redundância, permutação por grupo e a decisão: tirar um grupo de cada vez no walk-forward, medindo minutos e PR-AUC. Entrega o **dataset de modelagem** do modelo oficial. | [`feature_selection/README.md`](feature_selection/README.md) |
-| **Seleção de algoritmos (Aula 05)** | Logística, árvore, Random Forest, Extra Trees, 1 Gradient Boosting e a média de 5, contra quatro baselines, no walk-forward mensal. Regra pré-registrada + escada de complexidade. Limiar pelo custo. Teste uma vez. Salva o modelo para uso. | [`selecao_algoritmos/README.md`](selecao_algoritmos/README.md) |
-| **Análise de modelos (Aula 06)** | Tabela única (minutos, PR-AUC, recall, precisão, F2, MCC, Brier), curvas, custo conforme o limiar, calibração e faixas de risco, estabilidade mês a mês, bootstrap por dia, segmentos, falsos negativos e falsos positivos. | [`analise_modelos/README.md`](analise_modelos/README.md) |
-| **Verificação e validação (Aula 07)** | Checklist automático (o script para se algo não bater), alvo embaralhado, gap, tipos de validação cruzada, drift, re-treino mensal, erro de balança, corte de peso, sementes, critérios de aceitação, monitoramento, validação de domínio e de negócio. | [`verificacao_validacao/README.md`](verificacao_validacao/README.md) |
-| **Interpretação (Aula 08)** | Caixa de vidro (logística de 10 features e árvore que imita o modelo), importância por grupo, PDP/ICE com casos impossíveis, TreeSHAP exato, LIME, contrafactuais em toneladas de pesado, cestão 1 × 2 e uma explicação de 3 frases por alarme. | [`interpretacao_modelos/README.md`](interpretacao_modelos/README.md) |
+| **EDA** | Junta as 4 tabelas, limpa (camadas abaixo de 2.000 kg saem), investiga os dados. Novo item 9: os três sinais que o modelo oficial mais usa (histórico do forno, gusa líquida e cestão 1 → cestão 2). | [`src/EDA/README.md`](src/EDA/README.md) |
+| **Feature selection** | 84 candidatas da receita + 36 novas + o resultado do cestão 1 = **121 features**, organizadas em 10 grupos. Filtro, redundância, permutação por grupo e a decisão: tirar um grupo de cada vez no walk-forward, medindo minutos e PR-AUC. Entrega o **dataset de modelagem** do modelo oficial. | [`src/feature_selection/README.md`](src/feature_selection/README.md) |
+| **Seleção de algoritmos (Aula 05)** | Logística, árvore, Random Forest, Extra Trees, 1 Gradient Boosting e a média de 5, contra quatro baselines, no walk-forward mensal. Regra pré-registrada + escada de complexidade. Limiar pelo custo. Teste uma vez. Salva o modelo para uso. | [`src/selecao_algoritmos/README.md`](src/selecao_algoritmos/README.md) |
+| **Análise de modelos (Aula 06)** | Tabela única (minutos, PR-AUC, recall, precisão, F2, MCC, Brier), curvas, custo conforme o limiar, calibração e faixas de risco, estabilidade mês a mês, bootstrap por dia, segmentos, falsos negativos e falsos positivos. | [`src/analise_modelos/README.md`](src/analise_modelos/README.md) |
+| **Verificação e validação (Aula 07)** | Checklist automático (o script para se algo não bater), alvo embaralhado, gap, tipos de validação cruzada, drift, re-treino mensal, erro de balança, corte de peso, sementes, critérios de aceitação, monitoramento, validação de domínio e de negócio. | [`src/verificacao_validacao/README.md`](src/verificacao_validacao/README.md) |
+| **Interpretação (Aula 08)** | Caixa de vidro (logística de 10 features e árvore que imita o modelo), importância por grupo, PDP/ICE com casos impossíveis, TreeSHAP exato, LIME, contrafactuais em toneladas de pesado, cestão 1 × 2 e uma explicação de 3 frases por alarme. | [`src/interpretacao_modelos/README.md`](src/interpretacao_modelos/README.md) |
 | **Deploy (Aula 09)** | App Streamlit com a identidade da EVCOMX: monta a corrida camada por camada e o modelo oficial diz se vai dar carga alta. | [`app_streamlit/README.md`](app_streamlit/README.md) |
-| *Registro* | Como o modelo oficial foi encontrado, o pré-registro dos finalistas e três cenários operacionais. | [`otimizacao_minutos/README.md`](otimizacao_minutos/README.md) |
+| *Registro* | Como o modelo oficial foi encontrado, o pré-registro dos finalistas e três cenários operacionais. | [`src/otimizacao_minutos/README.md`](src/otimizacao_minutos/README.md) |
 
-As bibliotecas e versões estão em [`requirements.txt`](requirements.txt). Cada pasta tem o script `.py` (células `#%%`) e o notebook `.ipynb` já executado.
+As bibliotecas e versões estão em [`requirements.txt`](requirements.txt). Cada etapa em `src/` tem o script `.py` (células `#%%`) e o notebook `.ipynb` já executado.
 
 ---
 

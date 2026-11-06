@@ -30,7 +30,7 @@
 #
 # **Toda escolha aqui usa só treino + validação (o "dev").** O teste não é aberto nesta etapa.
 #
-# **Rode antes o `EDA/transforma_dataset.py`**: a feature selection parte do `EDA/base.csv`.
+# **Rode antes o `src/EDA/transforma_dataset.py`**: a feature selection parte do `src/EDA/base.csv`.
 # Leva ~15 min (a seção 9 treina 5 Gradient Boosting × 8 meses para cada conjunto testado).
 
 # %%
@@ -50,7 +50,7 @@ from sklearn.feature_selection import mutual_info_classif
 from sklearn.metrics import average_precision_score
 
 RAIZ = next(p for p in [Path.cwd(), *Path.cwd().parents]
-            if (p / "EDA").is_dir() and (p / "original_dataset").is_dir())
+            if (p / "src").is_dir() and (p / "original_dataset").is_dir())
 sys.path.insert(0, str(RAIZ))
 from comum.protocolo import (MESES_CUSTO, VARIANTES, FINAL6, familia, prever, oof_dev, resumo_wf, RF6, carregar)
 
@@ -63,8 +63,8 @@ AZUL, VERMELHO, CINZA, LARANJA, VERDE = "#2b6cb0", "#c0392b", "#7f8c8d", "#dd8a2
 # %% [markdown]
 # ## 0. Ler a base limpa da EDA
 #
-# A feature selection **não refaz a limpeza**: lê o `EDA/base.csv` gerado pelo
-# `EDA/transforma_dataset.py`. Decisões de limpeza que já vêm aplicadas:
+# A feature selection **não refaz a limpeza**: lê o `src/EDA/base.csv` gerado pelo
+# `src/EDA/transforma_dataset.py`. Decisões de limpeza que já vêm aplicadas:
 # - duplicatas 100% iguais removidas;
 # - **camadas abaixo de 2.000 kg removidas, peso zero incluído** (EVCOMX: peso zero = o gancho
 #   não pegou o material, a camada nunca entrou no cestão; e, por e-mail, camadas de 10 ou 100 kg
@@ -76,9 +76,9 @@ AZUL, VERMELHO, CINZA, LARANJA, VERDE = "#2b6cb0", "#c0392b", "#7f8c8d", "#dd8a2
 # A variável resposta vem de `original_dataset/` (somente leitura).
 
 # %%
-# A raiz do repositório foi achada na célula de cima (funciona rodando de feature_selection/ ou da raiz)
-PASTA_EDA, PASTA_BRUTOS = RAIZ / "EDA", RAIZ / "original_dataset"
-PASTA_SAIDA = RAIZ / "feature_selection"
+# A raiz do repositório foi achada na célula de cima (funciona rodando de src/feature_selection/ ou da raiz)
+PASTA_EDA, PASTA_BRUTOS = RAIZ / "src" / "EDA", RAIZ / "original_dataset"
+PASTA_SAIDA = RAIZ / "src" / "feature_selection"
 PASTA_GRAF = PASTA_SAIDA / "graficos"
 PASTA_GRAF.mkdir(exist_ok=True)
 
@@ -88,7 +88,7 @@ def salvar(nome):
     plt.show()
 
 arq_base, arq_pipeline = PASTA_EDA / "base.csv", PASTA_EDA / "transforma_dataset.py"
-assert arq_base.exists(), "EDA/base.csv não existe: rode o EDA/transforma_dataset.py primeiro!"
+assert arq_base.exists(), "src/EDA/base.csv não existe: rode o src/EDA/transforma_dataset.py primeiro!"
 if arq_pipeline.exists() and arq_pipeline.stat().st_mtime > arq_base.stat().st_mtime:
     print("ATENÇÃO: transforma_dataset.py foi alterado depois do base.csv ser gerado.\n"
           "         Rode o pipeline de novo para usar a limpeza atual.")
@@ -406,7 +406,7 @@ print("84 candidatas:", len(candidatas) == 84, "| tabela:", d.shape)
 # ## 4. Features novas (depois do critério de minutos da EVCOMX, out/2026)
 #
 # Na rodada da Random Forest, o histórico era só `taxa_ca_ult5/10/20`. A otimização por minutos
-# testou 168 configurações (registro em `otimizacao_minutos/experimentos_log.csv`) e ficaram **36 features
+# testou 168 configurações (registro em `src/otimizacao_minutos/experimentos_log.csv`) e ficaram **36 features
 # novas** em quatro famílias, mais o resultado do cestão 1:
 #
 # | Família | Features | Por que | Quando está disponível |
@@ -711,7 +711,7 @@ plt.tight_layout(); plt.savefig(PASTA_GRAF / "02_permutacao_por_grupo.png", dpi=
 # espalham 600–635 min e ±0,02 de PR-AUC.
 #
 # **Transparência:** esta ablação já tinha sido feita na rodada 2 da otimização (31/out/2026,
-# `otimizacao_minutos/experimentos_log.csv`), com a conclusão "tudo dentro do ruído". Aqui ela é refeita
+# `src/otimizacao_minutos/experimentos_log.csv`), com a conclusão "tudo dentro do ruído". Aqui ela é refeita
 # de forma reproduzível, com a mesma conclusão.
 
 # %%

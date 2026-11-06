@@ -154,7 +154,7 @@ def main() -> int:
     arq_res = entrada / "resultados.csv"
     resultados = pd.read_csv(arq_res, na_values=["null"], dtype={"cd_corrida": str}) if arq_res.exists() else None
 
-    pacote = joblib.load(RAIZ / "selecao_algoritmos" / "modelo_final.joblib")
+    pacote = joblib.load(RAIZ / "src" / "selecao_algoritmos" / "modelo_final.joblib")
     hist, resposta, mats = fc.carregar_historico()
     try:
         saida, _ = prever_lote(camadas, resultados, pacote, hist, resposta, mats, a.conservador)

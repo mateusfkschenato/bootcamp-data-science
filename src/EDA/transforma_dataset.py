@@ -27,9 +27,9 @@
 #%%
 import pandas as pd
 
-infos_camadas = pd.read_csv("../original_dataset/infos_camadas.csv", na_values=["null"])
-infos_materiais = pd.read_csv("../original_dataset/infos_materiais.csv", na_values=["null"])
-dicionario_tipo_material = pd.read_csv("../original_dataset/dicionario_tipo_material.csv", na_values=["null"])
+infos_camadas = pd.read_csv("../../original_dataset/infos_camadas.csv", na_values=["null"])
+infos_materiais = pd.read_csv("../../original_dataset/infos_materiais.csv", na_values=["null"])
+dicionario_tipo_material = pd.read_csv("../../original_dataset/dicionario_tipo_material.csv", na_values=["null"])
 
 base = infos_camadas.merge(
     infos_materiais, left_on="cd_codigo_material", right_on="Metálico", how="left"
@@ -177,7 +177,7 @@ print("base.csv atualizado e salvo.")
 # cestão fica vazio (todos têm pelo menos uma camada >= 2.000 kg).
 # Como nem todo registro abaixo de 2 t é "gancho vazio" (a mediana entre
 # 100 kg e 2 t é ~1,6 t), o efeito disso no modelo foi conferido na
-# verificação (ver verificacao_validacao/README.md).
+# verificação (ver src/verificacao_validacao/README.md).
 #%%
 import pandas as pd
 
@@ -270,7 +270,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 base = pd.read_csv("base.csv")
-resposta = pd.read_csv("../original_dataset/VariavelResposta.csv")
+resposta = pd.read_csv("../../original_dataset/VariavelResposta.csv")
 
 for col in ["Densidade t/m3", "Rendimento Metálico %"]:
     if not pd.api.types.is_numeric_dtype(base[col]):

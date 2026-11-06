@@ -2,7 +2,7 @@
 Arcanum: simulador de carga alta · EVCOMX
 Monte uma corrida (cestão 1, cestão 2 e a gusa líquida), camada por camada, e o
 modelo escolhido do projeto (média de 5 Gradient Boosting,
-selecao_algoritmos/modelo_final.joblib) diz se ela deve dar carga alta.
+src/selecao_algoritmos/modelo_final.joblib) diz se ela deve dar carga alta.
 
 Rodar (de dentro desta pasta):
     python -m streamlit run app.py

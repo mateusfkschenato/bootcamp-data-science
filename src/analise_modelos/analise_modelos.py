@@ -2,7 +2,7 @@
 # # Análise de Modelos e Métricas — Predição de Carga Alta (EVCOMX)
 #
 # Segue a **Aula 06 do bootcamp** (Análise de Modelos e Métricas de Desempenho) e o Guia de
-# Modelagem da EVCOMX (§5), e continua `selecao_algoritmos/`. A seleção escolheu o modelo. Aqui
+# Modelagem da EVCOMX (§5), e continua `src/selecao_algoritmos/`. A seleção escolheu o modelo. Aqui
 # medimos **o que ele entrega**, com as métricas certas, e traduzimos os erros para a operação.
 #
 # **Modelo analisado: o oficial**, a média de 5 Gradient Boosting com 121 features (120 +
@@ -51,9 +51,9 @@ sys.path.insert(0, str(RAIZ))
 from comum.protocolo import (ARQ_COMPLETO, C_FP, MESES_CUSTO, NOME_OFICIAL, NOME_REGRA, NOME_RESERVA, NOME_RF6,
                              carregar, familia, ler_features, melhor_limiar, minutos, prever)
 
-PASTA = RAIZ / "analise_modelos"
+PASTA = RAIZ / "src" / "analise_modelos"
 (PASTA / "graficos").mkdir(exist_ok=True)
-SEL = RAIZ / "selecao_algoritmos"
+SEL = RAIZ / "src" / "selecao_algoritmos"
 pd.set_option("display.width", 220); pd.set_option("display.max_columns", 30)
 plt.rcParams.update({"figure.dpi": 110, "axes.spines.top": False, "axes.spines.right": False,
                      "axes.grid": True, "grid.color": "#e5e5e5", "grid.linewidth": 0.6, "axes.axisbelow": True})
@@ -114,7 +114,7 @@ print(f"Paradas por 30 dias (ano todo): {par.sum() / ((D.t_ini.max() - D.t_ini.m
 # %% [markdown]
 # ## 2. A métrica principal, escolhida antes de testar (slides 18, 35 e 36)
 #
-# Declarado antes de abrir o teste (`otimizacao_minutos/finalistas_dev_pre_registro.csv`):
+# Declarado antes de abrir o teste (`src/otimizacao_minutos/finalistas_dev_pre_registro.csv`):
 # - **minutos perdidos** com o limiar vindo do dev: é a métrica de negócio;
 # - **PR-AUC**: a métrica principal do grupo para a ordem dos cestões (não depende do limiar);
 # - ROC-AUC, recall, precisão, F1, F2, MCC e Brier como apoio. **A acurácia engana**: quem sempre

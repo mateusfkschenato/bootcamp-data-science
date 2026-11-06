@@ -2,10 +2,10 @@
 # # Interpretação do Modelo (Explainable AI) — Predição de Carga Alta (EVCOMX)
 #
 # Segue a **Aula 08 do bootcamp** (Interpretação de Modelos) e vem depois de
-# `verificacao_validacao/`: primeiro se valida, depois se interpreta.
+# `src/verificacao_validacao/`: primeiro se valida, depois se interpreta.
 #
 # **Modelo explicado: o oficial**, a média de 5 Gradient Boosting com 121 features (120 + o
-# resultado do cestão 1), **treinado no dev** (`selecao_algoritmos/modelo_dev.joblib`). As
+# resultado do cestão 1), **treinado no dev** (`src/selecao_algoritmos/modelo_dev.joblib`). As
 # explicações são feitas no **teste** (24/jun a 4/ago/26, 515 cestões, 75 cargas altas), que esse
 # modelo nunca viu. **Esta etapa não escolhe nada e não muda o modelo.**
 #
@@ -19,7 +19,7 @@
 #
 # | Passo da aula (slide 42) | Seção |
 # |---|---|
-# | 1. Valide antes de interpretar | `verificacao_validacao/` + seção 0 |
+# | 1. Valide antes de interpretar | `src/verificacao_validacao/` + seção 0 |
 # | 2. Quem recebe a explicação | README |
 # | Modelos transparentes (caixa de vidro) | 1 |
 # | 3. Importância global (permutação, SHAP; por grupo) | 2 |
@@ -48,12 +48,12 @@ from sklearn.tree import DecisionTreeRegressor, export_text
 
 warnings.filterwarnings("ignore")
 RAIZ = next(p for p in [Path.cwd(), *Path.cwd().parents] if (p / "comum").is_dir())
-sys.path.insert(0, str(RAIZ)); sys.path.insert(0, str(RAIZ / "interpretacao_modelos"))
+sys.path.insert(0, str(RAIZ)); sys.path.insert(0, str(RAIZ / "src" / "interpretacao_modelos"))
 from comum.protocolo import ARQ_COMPLETO, NOME_OFICIAL, carregar, ler_features, minutos
 from comum.receita import Camada, camadas_da_base, recalcular, tabela_materiais
 from treeshap_hgb import conferir_com_shap, shap_comite, shap_hgb
 
-PASTA = RAIZ / "interpretacao_modelos"
+PASTA = RAIZ / "src" / "interpretacao_modelos"
 (PASTA / "graficos").mkdir(exist_ok=True)
 pd.set_option("display.width", 220); pd.set_option("display.max_columns", 30); pd.set_option("display.max_colwidth", 200)
 plt.rcParams.update({"figure.dpi": 110, "axes.spines.top": False, "axes.spines.right": False,
@@ -71,7 +71,7 @@ CORES_G = {"histórico do forno": VERMELHO, "resultado do cestão 1": "#8e44ad",
 FEAT = ler_features(); F = FEAT["features_oficial"]; GRUPOS = FEAT["grupos"]
 G_DE = {c: g for g, cols in GRUPOS.items() for c in cols}
 D, DEV, TESTE = carregar(ARQ_COMPLETO)
-PK = joblib.load(RAIZ / "selecao_algoritmos/modelo_dev.joblib")
+PK = joblib.load(RAIZ / "src/selecao_algoritmos/modelo_dev.joblib")
 MODELOS, LIM = PK["modelos"], PK["limiar_minutos_TP0"]
 assert PK["features"] == F and PK["treinado_em"].startswith("treino + validação")
 
@@ -81,7 +81,7 @@ def chance(X):
 
 
 p_te = chance(TESTE)
-prev = pd.read_csv(RAIZ / "selecao_algoritmos/previsoes_dev_teste.csv")
+prev = pd.read_csv(RAIZ / "src/selecao_algoritmos/previsoes_dev_teste.csv")
 ps = prev[(prev.modelo == NOME_OFICIAL) & (prev.parte == "teste")].set_index(["cd_corrida", "nu_carregamento"])
 assert np.allclose(p_te, ps.loc[TESTE.set_index(["cd_corrida", "nu_carregamento"]).index, "p"].values, atol=1e-12)
 alarme = p_te > LIM; y = TESTE.carga_alta.values.astype(bool)
@@ -319,7 +319,7 @@ lime_df.round(2)
 # Versão **ingênua**, para comparar: mexer só em `prop_peso_pesado`, com o resto parado.
 
 # %%
-base = pd.read_csv(RAIZ / "EDA/base.csv", dtype={"cd_codigo_material": str})
+base = pd.read_csv(RAIZ / "src/EDA/base.csv", dtype={"cd_codigo_material": str})
 mats = tabela_materiais(base, F)
 orig = camadas_da_base(base, TESTE.cd_corrida)
 idx_al = np.where(alarme)[0]

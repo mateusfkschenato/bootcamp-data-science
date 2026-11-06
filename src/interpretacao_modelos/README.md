@@ -1,15 +1,15 @@
 ## Interpretação do Modelo (Explainable AI) — Predição de Carga Alta (EVCOMX)
 
-Segue a **Aula 08 do bootcamp** (Interpretação de Modelos) e vem depois de `verificacao_validacao/`: primeiro se valida, depois se interpreta.
+Segue a **Aula 08 do bootcamp** (Interpretação de Modelos) e vem depois de `src/verificacao_validacao/`: primeiro se valida, depois se interpreta.
 
-**Esta etapa não escolhe nada e não muda o modelo.** O modelo explicado é o **oficial**, a média de 5 Gradient Boosting com 121 features, **treinado no dev** (`selecao_algoritmos/modelo_dev.joblib`). As explicações são feitas no **teste** (24/jun a 4/ago/2026, 515 cestões, 75 cargas altas), que esse modelo nunca viu.
+**Esta etapa não escolhe nada e não muda o modelo.** O modelo explicado é o **oficial**, a média de 5 Gradient Boosting com 121 features, **treinado no dev** (`src/selecao_algoritmos/modelo_dev.joblib`). As explicações são feitas no **teste** (24/jun a 4/ago/2026, 515 cestões, 75 cargas altas), que esse modelo nunca viu.
 
 > **Antes (out/2026), esta pasta explicava a Random Forest de 6 features**, com Shapley exato "na mão" (2⁶ = 64 combinações).
 
 ### Como rodar
 
 1. As etapas anteriores, em ordem.
-2. `interpretacao_modelos/interpretacao_modelos.py` (células `#%%`) ou `interpretacao_modelos.ipynb` (mesmo conteúdo, já executado). Leva ~1 min.
+2. `src/interpretacao_modelos/interpretacao_modelos.py` (células `#%%`) ou `interpretacao_modelos.ipynb` (mesmo conteúdo, já executado). Leva ~1 min.
 
 **SHAP sem o pacote `shap`.** Com 121 features não dá para enumerar as combinações (2¹²¹). O pacote `shap` não pôde ser instalado no ambiente onde o projeto rodou, então `treeshap_hgb.py` implementa o **TreeSHAP exato** do `shap.TreeExplainer` (modo "tree_path_dependent"), lendo as árvores do `HistGradientBoostingClassifier`. Três conferências:
 - em todos os 515 cestões, **referência + soma dos SHAP = saída do modelo** (erro de 4e-15; o script para se não fechar);
@@ -99,7 +99,7 @@ Para os 148 cestões alarmados no teste: quantas toneladas de leve trocadas por 
 
 - **Com o forno calmo, o alarme é quase sempre "da receita"**, e pouco pesado a mais resolve. Com o forno agitado, metade dos alarmes não sai nem com 15 t: o risco vem do histórico, que a montagem não muda.
 - **Versão ingênua** (só `prop_peso_pesado` sobe, o resto parado): pede uma mediana de +12 pontos percentuais de pesado, e gera cestões que não existem.
-- **Isto não é uma receita para o pátio.** É o que mudaria a resposta **do modelo**. Se trocar 3 t de leve por pesado evita a carga alta no forno de verdade é uma pergunta de causa, que só um piloto responde (`otimizacao_minutos/`, cenário 2).
+- **Isto não é uma receita para o pátio.** É o que mudaria a resposta **do modelo**. Se trocar 3 t de leve por pesado evita a carga alta no forno de verdade é uma pergunta de causa, que só um piloto responde (`src/otimizacao_minutos/`, cenário 2).
 
 ### 8. Traduzir para o negócio (slide 40)
 

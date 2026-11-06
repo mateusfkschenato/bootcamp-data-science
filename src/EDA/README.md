@@ -2,7 +2,7 @@
 
 Projeto final do bootcamp de ciência de dados, em parceria com a EVCOMX: um modelo de classificação que prevê se uma receita de cestão vai gerar **carga alta** no forno elétrico a arco (FEA) durante o carregamento de sucata.
 
-> **Atualização (nov/2026): a EDA e o modelo oficial.** O modelo oficial do projeto é a **média de 5 Gradient Boosting com 121 features** (ver `selecao_algoritmos/`). Ele se apoia muito em três informações que não estão na receita do cestão. A EDA ganhou o **ITEM 9** para mostrar, nos dados brutos, que elas existem e o tamanho delas (gráfico `14_sinais_do_modelo_oficial.png`). Os itens 1 a 8 não mudaram: a limpeza e o `base.csv` são os mesmos que alimentam todas as etapas. Antes, o modelo era uma Random Forest com 6 features.
+> **Atualização (nov/2026): a EDA e o modelo oficial.** O modelo oficial do projeto é a **média de 5 Gradient Boosting com 121 features** (ver `src/selecao_algoritmos/`). Ele se apoia muito em três informações que não estão na receita do cestão. A EDA ganhou o **ITEM 9** para mostrar, nos dados brutos, que elas existem e o tamanho delas (gráfico `14_sinais_do_modelo_oficial.png`). Os itens 1 a 8 não mudaram: a limpeza e o `base.csv` são os mesmos que alimentam todas as etapas. Antes, o modelo era uma Random Forest com 6 features.
 >
 > | Sinal (ITEM 9) | O que os dados mostram |
 > |---|---|
@@ -17,7 +17,7 @@ O pipeline está dividido em dois arquivos, nessa ordem obrigatória:
 1. **`transforma_dataset.py`** — Parte A (pipeline). Lê os 4 arquivos brutos do projeto, limpa e transforma os dados, e salva `base.csv` e `dataset_modelagem.csv` em disco. Rode do início ao fim antes do passo 2.
 2. **`EDA.py`** — Parte B (análise exploratória). Lê os arquivos que a Parte A gerou e produz os gráficos (salvos em `graficos/`) e as investigações da EDA. **Não roda sem antes rodar o `transforma_dataset.py`** — ele depende de `base.csv` (já limpo) e de `dataset_modelagem.csv`.
 
-Os dois arquivos usam marcadores `#%%`, então também dá pra rodar célula por célula no VS Code / Jupyter, na ordem em que aparecem.
+Os dois arquivos usam marcadores `#%%`, então também dá pra rodar célula por célula no VS Code / Jupyter, na ordem em que aparecem. O `EDA.ipynb` junta as duas partes numa ordem só, já executado, com tabelas e gráficos.
 
 ### Arquivos de entrada (brutos, em `original_dataset/`)
 
@@ -55,7 +55,7 @@ Organizada pelos itens do checklist de EDA do bootcamp:
   1. *Após a apresentação da EDA:* antes, o peso zero era imputado pela mediana do material. Mas peso zero significa que a camada estava na receita e o gancho não pegou o material: a camada nunca entrou no cestão. Passou a ser removido.
   2. *Resposta por e-mail (21/out/2026)* sobre as camadas de 10 kg e 100 kg: elas "também podem ser desconsideradas na montagem, dificilmente temos camadas com menos de 2000kg. Podem usar esse valor de corte." O corte passou de "peso = 0" para "peso < 2.000 kg".
 
-  O corte remove **5.180 camadas (12% do bruto), mas só 2,5% do peso dos cestões 1 e 2**: 2.030 com peso zero, 326 entre 1 e 99 kg (249 delas com exatamente 10 kg) e 2.824 entre 100 kg e 2 t. Saem camadas de 2.663 cestões, mas **nenhum cestão inteiro** sai (o script para com erro se isso acontecer). Nem tudo abaixo de 2 t parece gancho vazio: entre 100 kg e 2 t a mediana é ~1,6 t. Por isso a verificação mede o quanto o modelo depende do corte (`verificacao_validacao/README.md`, seção 5c-bis): a PR-AUC muda menos de 0,03 entre os cortes de 0, 100, 1.000 e 2.000 kg, dentro do ruído.
+  O corte remove **5.180 camadas (12% do bruto), mas só 2,5% do peso dos cestões 1 e 2**: 2.030 com peso zero, 326 entre 1 e 99 kg (249 delas com exatamente 10 kg) e 2.824 entre 100 kg e 2 t. Saem camadas de 2.663 cestões, mas **nenhum cestão inteiro** sai (o script para com erro se isso acontecer). Nem tudo abaixo de 2 t parece gancho vazio: entre 100 kg e 2 t a mediana é ~1,6 t. Por isso a verificação mede o quanto o modelo depende do corte (`src/verificacao_validacao/README.md`, seção 5c-bis): a PR-AUC muda menos de 0,03 entre os cortes de 0, 100, 1.000 e 2.000 kg, dentro do ruído.
 - **A ordem leve → pesado → misto → leve se repete em vários ciclos dentro do mesmo cestão** (correção da EVCOMX). Ela não acontece uma vez só, com leve no fundo e no topo. Os gráficos 07 e 08 (fundo/meio/topo) só descrevem as pontas. A regra de montagem é analisada pelos gráficos 12 (sequência real das camadas) e 13 (carga alta por número de ciclos). Cestões com mais ciclos têm bem menos carga alta (cestão 1: 42% com 0 ou 1 ciclo, 7% com 5 ou mais; cestão 2: 26% contra 1%).
 
 - **Outliers são mantidos**, não removidos — ficam marcados em duas flags (`acima_capacidade`, regra de negócio; `outlier_estatistico`, critério IQR), porque a maioria dos outliers estatísticos no carregamento 2 são cestões pesados legítimos, não erro de medição.
