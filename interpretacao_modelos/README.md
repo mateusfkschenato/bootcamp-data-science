@@ -4,7 +4,7 @@ Segue a **Aula 08 do bootcamp** (Interpretação de Modelos) e vem depois de `ve
 
 **Esta etapa não escolhe nada e não muda o modelo.** O modelo explicado é o **oficial**, a média de 5 Gradient Boosting com 121 features, **treinado no dev** (`selecao_algoritmos/modelo_dev.joblib`). As explicações são feitas no **teste** (24/jun a 4/ago/2026, 515 cestões, 75 cargas altas), que esse modelo nunca viu.
 
-> **Antes (out/2026), esta pasta explicava a Random Forest de 6 features**, com Shapley exato "na mão" (2⁶ = 64 combinações). Está em [`historico_rf6/`](historico_rf6/README.md).
+> **Antes (out/2026), esta pasta explicava a Random Forest de 6 features**, com Shapley exato "na mão" (2⁶ = 64 combinações).
 
 ### Como rodar
 
@@ -32,17 +32,6 @@ O script também para se o modelo explicado não der exatamente as chances da se
 | `explicacoes_alarmes_teste.csv` | Os 148 alarmes e as 18 cargas altas perdidas do teste explicados em 3 frases |
 | `treeshap_hgb.py` | O TreeSHAP para Gradient Boosting |
 | `graficos/` | 4 figuras |
-
-### Quem recebe a explicação (slide 9)
-
-| Quem | O que quer saber | O que mostramos |
-|---|---|---|
-| O grupo e o professor | O modelo aprendeu algo errado? | Importância por grupo, PDP/ICE com casos impossíveis, SHAP × permutação, LIME |
-| Gestão da EVCOMX | Posso confiar e agir com base nisso? | Os quatro sinais em linguagem de pátio, o que o modelo **não** sabe |
-| Operador do pátio | Por que **este** cestão foi alarmado? O que eu mudo? | A explicação de 3 frases e o contrafactual em toneladas |
-| Auditoria (a própria EVCOMX) | O modelo trata casos iguais de forma diferente? | Cestão 1 × cestão 2, o que puxa cada alarme |
-
----
 
 ### 1. Modelos transparentes, a "caixa de vidro" (slides 16 a 20)
 
@@ -89,18 +78,6 @@ O script também para se o modelo explicado não der exatamente as chances da se
 - **As duas réguas discordam sobre a gusa:** SHAP alto, permutação baixa. A gusa separa muito bem as corridas **sem** gusa (quase nunca dão carga alta, gráfico 03), mas essas são poucas no teste (18 de 515): embaralhar a coluna mexe pouco na ordem.
 - **Caso estranho:** `dia_semana` está no top 6 do SHAP. Não tem explicação física óbvia; pode ser um efeito de turno/equipe, ou ruído que o modelo aprendeu. Vale perguntar ao pátio se há diferença de rotina entre os dias.
 
-### 3. PDP, ICE e os "casos impossíveis" (slides 24 a 26 e 38; gráfico 02)
-
-| Feature | Sentido | Chance de… → … | Linhas ICE no mesmo sentido | Pontos do PDP em combinações quase inexistentes |
-|---|---|---|---|---|
-| `prop_peso_pesado` | desce | 0,19 → 0,15 | 95% | 24% (com a densidade parada) |
-| `h_ewm2` | sobe | 0,14 → 0,24 | 100% | **59%** (com `taxa_ca_ult5` parada) |
-| `gusl_t` | sobe | 0,08 → 0,17 | 100% | 3% |
-| `densidade_media` | desce | 0,17 → 0,15 | 100% | 27% |
-
-- Os sentidos batem com a física e com a verificação (seção 6.3).
-- **Os efeitos parecem pequenos no PDP porque ele mexe numa coluna só.** Mudar só `prop_peso_pesado`, com a densidade, as `rel_` e o peso por ciclo parados, cria cestões que não existem (24% dos pontos). Para o histórico, 59%: um forno com média exponencial alta e nenhuma carga alta nas últimas 5 corridas não acontece. A forma da curva vale como ilustração; o tamanho, não. Por isso o contrafactual (seção 6) recalcula a receita inteira.
-
 ### 4. SHAP (slides 28 a 31; gráfico 03)
 
 ![SHAP](graficos/03_shap_visao_geral_e_dois_cestoes.png)
@@ -109,13 +86,6 @@ A referência é a saída média do modelo na escala dele, equivalente a **~9% d
 
 - **O cestão de maior chance** (O7174 c2, chance 86%, deu carga alta, parada de 9 min): **0% de pesado e 0,64 t/m³** (+26 pontos), forno com 4 cargas altas nas últimas 5 corridas (+22), gusa (+10).
 - **O falso negativo mais "certo"** (O6558 c2, chance 2%, deu carga alta): o modelo deixou passar porque **o forno estava calmo** (nenhuma carga alta nas últimas 5 corridas, −4 pontos) e o ritmo e o regime recente também seguravam. A receita era só levemente fofa (0,77 t/m³, 17% de pesado). Nada no que o modelo vê indicava risco: é o ponto cego já visto na análise (forno calmo = economia de 18%).
-
-### 5. LIME (slides 32 a 34; gráfico 04)
-
-No mesmo falso negativo, **por grupo** (com 121 colunas, perturbar coluna a coluna cria cestões impossíveis), 20 execuções:
-- **Os três grupos principais são os mesmos do SHAP e não trocam de sinal:** histórico (−8 pontos no LIME, −4 no SHAP), ritmo e gusa.
-- **Os grupos pequenos são instáveis:** materiais, resultado do cestão 1 e ordem/ciclos trocam de sinal em 25–35% das execuções. É a instabilidade do slide 34.
-- **LIME e SHAP respondem perguntas diferentes:** o LIME mede para onde o modelo é sensível perto deste cestão; o SHAP divide a conta deste cestão. Para explicar um caso ao pátio, o SHAP é o certo, porque a conta fecha.
 
 ### 6. Contrafactuais: o que mudaria o alarme? (slide 35)
 
@@ -128,19 +98,8 @@ Para os 148 cestões alarmados no teste: quantas toneladas de leve trocadas por 
 | Todos | 148 | 55% | 3 t |
 
 - **Com o forno calmo, o alarme é quase sempre "da receita"**, e pouco pesado a mais resolve. Com o forno agitado, metade dos alarmes não sai nem com 15 t: o risco vem do histórico, que a montagem não muda.
-- **Versão ingênua** (só `prop_peso_pesado` sobe, o resto parado): pede uma mediana de +12 pontos percentuais de pesado, e gera exatamente o tipo de cestão impossível da seção 3.
+- **Versão ingênua** (só `prop_peso_pesado` sobe, o resto parado): pede uma mediana de +12 pontos percentuais de pesado, e gera cestões que não existem.
 - **Isto não é uma receita para o pátio.** É o que mudaria a resposta **do modelo**. Se trocar 3 t de leve por pesado evita a carga alta no forno de verdade é uma pergunta de causa, que só um piloto responde (`otimizacao_minutos/`, cenário 2).
-
-### 7. Viés e casos estranhos (slide 39)
-
-| | Cestões | Taxa real | Alarmes | Recall | Precisão | \|SHAP\| receita | \|SHAP\| histórico |
-|---|---|---|---|---|---|---|---|
-| Cestão 1 | 270 | 14% | 27% | 0,79 | 0,41 | 0,41 | 0,58 |
-| Cestão 2 | 245 | 15% | 30% | 0,73 | 0,37 | 0,66 | 0,67 |
-
-- **O desequilíbrio da RF antiga sumiu.** Ela dava alarme em 40% dos cestões 2 contra 28% dos cestões 1, com a mesma taxa real; o oficial fica em 30% × 27%. O resultado do cestão 1 e o contexto do cestão 1 explicam o cestão 2 sem precisar "ler pouco pesado como risco".
-- **O que puxa cada alarme** (`motivo_dos_alarmes.csv`): **47% pela receita**, 43% pelo histórico, 10% pela gusa. Os alarmes do histórico acertam um pouco mais (precisão 0,41 × 0,39).
-- Caso estranho: o peso do dia da semana (seção 2).
 
 ### 8. Traduzir para o negócio (slide 40)
 
@@ -163,18 +122,3 @@ Cada alarme e cada carga alta perdida do teste tem uma explicação de 3 frases 
 - **Colunas correlacionadas dividem o crédito.** Leia por grupo, não por coluna.
 - **PDP e contrafactual ingênuo avaliam o modelo onde ele nunca esteve.** Por isso o contrafactual usado recalcula a receita.
 - **SHAP em log-odds, pontos de chance por proporção.** A divisão em pontos de chance é uma convenção para comunicar; a conta exata é a de log-odds.
-
-### O que depende da EVCOMX
-
-| Pergunta | Muda o quê |
-|---|---|
-| Por que o cestão 2 dá menos carga alta quando o cestão 1 deu? | Explica o sinal mais forte depois do histórico |
-| O dia da semana muda a rotina do pátio? | Diz se `dia_semana` é sinal real ou ruído |
-| Trocar leve por pesado é viável na montagem? Quanto custa? | Diz se o contrafactual vira ação |
-| As explicações de 3 frases fazem sentido para o pátio? | O teste do "Para discutir" da aula |
-
-### Limitações
-
-- **TreeSHAP próprio.** Conferido pela conta que fecha e contra o Shapley por força bruta; a comparação com o pacote `shap` roda só onde ele estiver instalado.
-- **Explicações no teste, com o modelo treinado no dev.** O modelo para uso (todos os dados) é outro ajuste da mesma receita.
-- **scikit-learn 1.9.1.**

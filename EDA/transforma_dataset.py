@@ -27,9 +27,9 @@
 #%%
 import pandas as pd
 
-infos_camadas = pd.read_csv("infos_camadas.csv", na_values=["null"])
-infos_materiais = pd.read_csv("infos_materiais.csv", na_values=["null"])
-dicionario_tipo_material = pd.read_csv("dicionario_tipo_material.csv", na_values=["null"])
+infos_camadas = pd.read_csv("../original_dataset/infos_camadas.csv", na_values=["null"])
+infos_materiais = pd.read_csv("../original_dataset/infos_materiais.csv", na_values=["null"])
+dicionario_tipo_material = pd.read_csv("../original_dataset/dicionario_tipo_material.csv", na_values=["null"])
 
 base = infos_camadas.merge(
     infos_materiais, left_on="cd_codigo_material", right_on="Metálico", how="left"
@@ -270,7 +270,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 base = pd.read_csv("base.csv")
-resposta = pd.read_csv("VariavelResposta.csv")
+resposta = pd.read_csv("../original_dataset/VariavelResposta.csv")
 
 for col in ["Densidade t/m3", "Rendimento Metálico %"]:
     if not pd.api.types.is_numeric_dtype(base[col]):

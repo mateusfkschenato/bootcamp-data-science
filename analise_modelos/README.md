@@ -4,7 +4,7 @@ Segue a **Aula 06 do bootcamp** (Análise de Modelos e Métricas de Desempenho) 
 
 **Modelo analisado: o oficial**, a média de 5 Gradient Boosting com 121 features (120 + o resultado do cestão 1). Ao lado dele: a reserva (sem o cestão 1), a versão com histórico "lag2", a **RF de 6 features (o antigo plano A)** e a regra do histórico.
 
-> **Antes (out/2026), esta pasta analisava a Random Forest de 6 features**, com custo em razão `k` (o custo do alarme falso ainda não era conhecido) e calibração de Platt. Está em [`historico_rf6/`](historico_rf6/README.md). O achado principal daquela rodada era "no teste, o modelo não se separa da regra do histórico". Com o modelo oficial, isso mudou em PR-AUC, mas não nos minutos (seção 11).
+> **Antes (out/2026), esta pasta analisava a Random Forest de 6 features**, com custo em razão `k` (o custo do alarme falso ainda não era conhecido) e calibração de Platt. O achado principal daquela rodada era "no teste, o modelo não se separa da regra do histórico". Com o modelo oficial, isso mudou em PR-AUC, mas não nos minutos (seção 11).
 
 ### Como rodar
 
@@ -28,16 +28,6 @@ Segue a **Aula 06 do bootcamp** (Análise de Modelos e Métricas de Desempenho) 
 | `desempenho_por_segmento.csv` | Cestão 1 × 2, com × sem gusa, histórico alto × baixo, densidade |
 | `analise_erros_fn_fp.csv`, `casos_para_especialista.csv` | O que os erros têm em comum; os casos para revisar com o pátio |
 | `graficos/` | 7 figuras |
-
-### Passo a passo (slide 37 da aula)
-
-1. **Qual erro custa mais caro?** Uma carga alta não detectada para o forno **3,9 min em média** (mediana 2,9; 10% passam de 8 min). Um alarme falso custa **1 min** (EVCOMX). Um FN custa ~4 FP, e os FN não são todos iguais.
-2. **Métrica principal antes de testar:** minutos perdidos (régua de negócio) e PR-AUC (ordem dos cestões), declaradas antes de abrir o teste. A acurácia engana: no teste, quem nunca alarma acerta 85% e perde 251 min.
-3. **Baselines na mesma métrica:** sem modelo e a regra do histórico.
-4. **Tabela única**, curvas ROC e precisão-recall.
-5. **Matriz de confusão** traduzida.
-6. **Corte pelo custo.**
-7. Extras: calibração, estabilidade no tempo, bootstrap, diagnóstico de erros.
 
 ### Tabela única (Guia §5.5)
 
@@ -68,12 +58,6 @@ Segue a **Aula 06 do bootcamp** (Análise de Modelos e Métricas de Desempenho) 
 
 A cada 100 cestões, o oficial dispara **29 alarmes** (11 certos, 18 falsos) e deixa passar **3 ou 4 das 15 cargas altas**. A cada 30 dias: **188 min** de parada sem modelo, **98 min** com o oficial, 139 com a RF antiga. São **~3,7 alarmes por dia** para o pátio atender.
 
-### Curvas e o corte pelo custo (gráficos 01 e 03)
-
-- O oficial domina as curvas ROC e precisão-recall, principalmente na faixa de **recall 60–80%**, onde cai o limiar de menor custo.
-- **O limiar do dev (0,178) caiu perto do melhor possível no teste:** 131 min, contra 124 min do melhor limiar que só se saberia olhando o teste (0,19).
-- A RF antiga tinha chances infladas pelos pesos de classe: o limiar de menor custo dela fica em ~0,46.
-
 ### A "chance" é chance de verdade? (gráfico 04)
 
 ![Calibração](graficos/04_calibracao_e_faixas_de_risco.png)
@@ -88,20 +72,6 @@ A cada 100 cestões, o oficial dispara **29 alarmes** (11 certos, 18 falsos) e d
 | 10–20% | 22% | 10% | 13% |
 | 20–40% | 15% | 29% | 26% |
 | ≥ 40% | 11% | **59%** | **55%** |
-
-### O desempenho se mantém no tempo? (gráfico 05)
-
-O oficial economiza minutos em todos os meses do dev (de 13% em abr/26 a 50% em fev/26) e nos dois meses cheios do teste (48% em jun, 50% em jul). Agosto tem só 12 cestões e 2 cargas altas: o número não diz nada.
-
-### Minutos: pega as paradas que mais doem?
-
-| Modelo (teste) | Recall em eventos | Recall em minutos | Duração média das pegas | Das perdidas |
-|---|---|---|---|---|
-| **OFICIAL** | 76% | **84%** | 3,7 min | **2,2 min** |
-| RF 6 features (antigo) | 69% | 65% | 3,1 min | 3,8 min |
-| Regra do histórico | 72% | 72% | 3,3 min | 3,4 min |
-
-O oficial pega mais as paradas longas, embora não preveja a duração: entre as cargas altas, a chance quase não se relaciona com a duração (Spearman +0,09). É o resultado do cestão 1 e da gusa que separam melhor as corridas de parada longa.
 
 ### A diferença é real ou sorte? (bootstrap por dia, IC 90%)
 
@@ -137,10 +107,6 @@ O oficial pega mais as paradas longas, embora não preveja a duração: entre as
 
 **Falsos negativos e falsos positivos** (`analise_erros_fn_fp.csv`): as cargas altas perdidas têm o perfil de cestão normal (histórico 40%, densidade 0,80, 28% de pesado) e paradas curtas (mediana 2,4 min); os alarmes falsos têm o perfil de risco (densidade 0,73, 19% de pesado). Os 20 casos mais claros estão em `casos_para_especialista.csv`, para revisar com o pátio.
 
-### E as métricas de regressão?
-
-Não se aplicam: o alvo é sim/não. A duração da parada não é prevista; ela entra como peso na régua de minutos.
-
 ### Conclusão: é bom o suficiente para uso operacional?
 
 - **Contra a operação de hoje (sem alarme): sim.** No teste, 48% menos minutos (131 de 251), com ~3,7 alarmes por dia. No dev, 35%.
@@ -148,14 +114,6 @@ Não se aplicam: o alvo é sim/não. A duração da parada não é prevista; ela
 - **Contra a regra do histórico: ordena muito melhor (PR-AUC 0,57 × 0,36), mas a economia de minutos no teste ainda não se separa.** Vale medir de novo com o próximo lote.
 - **A chance pode ir para o pátio como está** (calibrada), de preferência em faixas de risco.
 - **O ganho depende do que o pátio faz com o alarme.** Se o alarme certo também custar 1 min, a economia no teste cai para 22% (verificação, seção 6.4).
-
-### O que depende da EVCOMX
-
-| Pergunta | O que muda aqui |
-|---|---|
-| O reajuste evita a parada inteira? O alarme certo custa 1 min? | A economia vai de 48% a ~22% |
-| Quantos alarmes por dia o pátio aguenta? | ~3,7 por dia hoje; um teto troca recall por menos alarmes |
-| Por que o cestão 2 dá menos carga alta quando o cestão 1 deu? | Explica a feature que mais ganha nos minutos |
 
 ### Limitações
 

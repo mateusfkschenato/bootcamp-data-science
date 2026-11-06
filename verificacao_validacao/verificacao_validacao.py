@@ -8,7 +8,7 @@
 #
 # **Modelo verificado: o oficial**, a média de 5 Gradient Boosting com 121 features (120 + o
 # resultado do cestão 1), de `selecao_algoritmos/modelo_final.joblib`. A verificação da RF de 6
-# features (o antigo plano A) está guardada em `historico_rf6/`.
+# features (o antigo plano A) está guardada no histórico do Git.
 #
 # **Esta etapa não escolhe nada.** O script **para com erro** se algum número das etapas anteriores
 # não bater.
@@ -302,7 +302,7 @@ uso = pd.DataFrame([
     ("seleção §6–9", "dev (walk-forward)", "algoritmos, variantes, desbalanceamento, limiar de minutos", "sim (refaz a otimização)"),
     ("seleção §10", "teste", "mesma conta da otimização, mesmos números; não-finalistas não são medidos", "não"),
     ("análise e verificação", "dev e teste", "métricas, bootstrap, calibração, segmentos, drift, critérios", "não"),
-    ("rodadas da RF (out/2026)", "validação e teste", "o grupo já tinha visto este teste com a RF; ver historico_rf6/", "não, para o modelo oficial"),
+    ("rodadas da RF (out/2026)", "validação e teste", "o grupo já tinha visto este teste com a RF; ver histórico do Git", "não, para o modelo oficial"),
 ], columns=["etapa", "partição", "o que foi feito", "decidiu algo?"])
 uso.to_csv(PASTA / "uso_validacao_e_teste.csv", index=False)
 uso
@@ -677,7 +677,7 @@ registro = {
                                             "EDA/base.csv", "feature_selection/dataset_modelagem_fs.csv"]},
     "versoes": {"python": platform.python_version(), "numpy": np.__version__, "pandas": pd.__version__,
                 "scikit-learn": sklearn.__version__, "scipy": scipy.__version__},
-    "antigo": "RF 6 features (plano A): ver */historico_rf6/",
+    "antigo": "RF 6 features (plano A): ver histórico do Git",
 }
 json.dump(registro, open(PASTA / "registro_experimento.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=float)
 open(PASTA / "requirements_rodada.txt", "w").write("\n".join(f"{k}=={v}" for k, v in registro["versoes"].items() if k != "python") + "\n")

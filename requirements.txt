@@ -1,12 +1,14 @@
-# Bibliotecas usadas por todas as etapas (EDA, feature selection, seleção, análise, verificação e interpretação).
-# Versões com que o modelo oficial (5 Gradient Boosting) foi treinado e reproduzido (Python 3.13).
-# As conferências automáticas dependem do scikit-learn 1.9.1: com outra versão, as chances podem mudar
-# um pouco e os scripts avisam (ou param, se a diferença quebrar uma conferência).
+# Bibliotecas de todas as etapas: pipeline, previsão, app e testes (Python 3.13).
+# São as versões que treinaram o modelo oficial. As conferências dependem do scikit-learn 1.9.1:
+# com outra versão, as chances podem mudar um pouco e os scripts avisam (ou param, se quebrar uma conferência).
 numpy==2.5.3
 pandas==3.0.5
 scikit-learn==1.9.1
 scipy==1.18.1
 matplotlib==3.11.2
 joblib==1.6.0
+tzdata==2025.2
+streamlit==1.66.1
+pytest==9.1.1
 # Opcional: se instalado, a interpretação (Aula 08) confere o TreeSHAP próprio contra o pacote.
 # shap

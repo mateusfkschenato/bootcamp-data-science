@@ -7,7 +7,7 @@
 #
 # > **Antes (out/2026), o conjunto era de 6 features**, escolhidas por votação entre seis métodos
 # > (filtro, RFE, L1, Elastic Net, permutação, Boruta) para uma Random Forest. Esse caminho está
-# > guardado em `historico_rf6/` (script, notebook, CSVs e gráficos). Ele foi superado quando a
+# > guardado no histórico do Git. Ele foi superado quando a
 # > EVCOMX deu o critério de negócio (**menos minutos de forno perdidos**) e confirmou que o
 # > resultado do cestão 1 é conhecido a tempo de mexer no cestão 2.
 #
@@ -406,7 +406,7 @@ print("84 candidatas:", len(candidatas) == 84, "| tabela:", d.shape)
 # ## 4. Features novas (depois do critério de minutos da EVCOMX, out/2026)
 #
 # Na rodada da Random Forest, o histórico era só `taxa_ca_ult5/10/20`. A otimização por minutos
-# testou 168 configurações (registro em `otimizacao_minutos/experimentos/`) e ficaram **36 features
+# testou 168 configurações (registro em `otimizacao_minutos/experimentos_log.csv`) e ficaram **36 features
 # novas** em quatro famílias, mais o resultado do cestão 1:
 #
 # | Família | Features | Por que | Quando está disponível |
@@ -520,10 +520,6 @@ HIST_LAG1 = [c for c in F_PRINCIPAL if c.startswith(("taxa_ca_ult", "h_")) and n
             ["h_n_corridas_8h", "h_n_corridas_24h"]
 F_LAG2 = [c for c in F_PRINCIPAL if c not in HIST_LAG1] + [f"h_taxa{n}_lag2" for n in [3, 5, 10, 20, 50]] + \
          [f"h_ewm{h}_lag2" for h in [2, 5, 15]]
-_ant = RAIZ / "otimizacao_minutos" / "features_finais.json"
-if _ant.exists():
-    _j = json.load(open(_ant, encoding="utf-8"))
-    assert _j["features_principal"] == F_PRINCIPAL and _j["features_lag2"] == F_LAG2, "listas diferentes da otimização"
 print(f"{len(NOVAS)} novas | principal {len(F_PRINCIPAL)} | oficial {len(F_OFICIAL)} | lag2 {len(F_LAG2)} | tabela {d.shape}")
 
 c2d = d[d.eh_cestao_2 == 1]
@@ -715,7 +711,7 @@ plt.tight_layout(); plt.savefig(PASTA_GRAF / "02_permutacao_por_grupo.png", dpi=
 # espalham 600–635 min e ±0,02 de PR-AUC.
 #
 # **Transparência:** esta ablação já tinha sido feita na rodada 2 da otimização (31/out/2026,
-# `otimizacao_minutos/experimentos/`), com a conclusão "tudo dentro do ruído". Aqui ela é refeita
+# `otimizacao_minutos/experimentos_log.csv`), com a conclusão "tudo dentro do ruído". Aqui ela é refeita
 # de forma reproduzível, com a mesma conclusão.
 
 # %%
@@ -893,12 +889,4 @@ resumo_g = pd.DataFrame([{
 resumo_g.to_csv(PASTA_SAIDA / "grupos_features.csv", index=False)
 print(resumo_g.drop(columns=["o_que_e"]).to_string(index=False))
 
-# Conferência: o dataset é o mesmo que gerou o modelo oficial na otimização (out/2026)?
-antigo = RAIZ / "otimizacao_minutos" / "dataset_minutos.csv"
-if antigo.exists():
-    a = pd.read_csv(antigo); n = pd.read_csv(PASTA_SAIDA / "dataset_features_completo.csv")
-    iguais = list(a.columns) == list(n.columns) and a.shape == n.shape and \
-        all(a[c].equals(n[c]) or np.allclose(a[c], n[c], equal_nan=True, rtol=0, atol=0)
-            if a[c].dtype.kind in "fi" else a[c].astype(str).equals(n[c].astype(str)) for c in a.columns)
-    print("Dataset idêntico ao da otimização por minutos:", iguais)
 print("Salvos em", PASTA_SAIDA)

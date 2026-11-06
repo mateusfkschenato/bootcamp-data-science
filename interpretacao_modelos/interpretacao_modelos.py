@@ -10,7 +10,7 @@
 # modelo nunca viu. **Esta etapa não escolhe nada e não muda o modelo.**
 #
 # > Antes, a explicação era da RF de 6 features (antigo plano A), com Shapley exato "na mão"
-# > (2⁶ = 64 combinações). Está em `historico_rf6/`.
+# > (2⁶ = 64 combinações). Está no histórico do Git.
 #
 # **SHAP sem o pacote `shap`.** O pacote não pôde ser instalado no ambiente onde o projeto rodou.
 # `treeshap_hgb.py` implementa o mesmo TreeSHAP exato do `shap.TreeExplainer` (modo

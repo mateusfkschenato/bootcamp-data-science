@@ -165,5 +165,5 @@
  },
  "treinado_em": "treino + validação + teste (todos os dados)",
  "versao_sklearn": "1.9.1",
- "antigo_planoA": "Random Forest, 6 features: ver historico_rf6/"
+ "antigo_planoA": "Random Forest, 6 features: ver histórico do Git"
 }

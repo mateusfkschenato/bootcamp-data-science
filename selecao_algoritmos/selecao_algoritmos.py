@@ -9,7 +9,7 @@
 # (120 + `carga_alta_c1`, o resultado do cestão 1).
 #
 # > **Antes (out/2026), o algoritmo escolhido era uma Random Forest com 6 features** (plano A),
-# > escolhida pela PR-AUC na validação. Ela está guardada em `historico_rf6/`. A troca veio quando
+# > escolhida pela PR-AUC na validação. Ela está guardada no histórico do Git. A troca veio quando
 # > a EVCOMX deu o critério de negócio: **o melhor modelo é o que faz perder menos minutos de forno**
 # > (carga alta não detectada = a duração da parada; alarme falso = 1 min). A RF continua aqui como
 # > linha de comparação.
@@ -246,7 +246,7 @@ plt.tight_layout(); plt.savefig(PASTA / "graficos/01_algoritmos_minutos_e_prauc.
 # %% [markdown]
 # ## 7. Hiperparâmetros: por que a média de 5 (slide 24)
 #
-# Na otimização foram testadas 168 configurações (`otimizacao_minutos/experimentos/`). A família
+# Na otimização foram testadas 168 configurações (`otimizacao_minutos/experimentos_log.csv`). A família
 # "Gradient Boosting com todas as features" deu os menores minutos em **todas** as variações de
 # hiperparâmetro. Escolher a melhor delas seria otimista (o melhor de muitos testes tende a ter
 # sorte). Por isso o oficial é a **média de 5 variações próximas** (`learning_rate` 0,03–0,05,
@@ -495,7 +495,7 @@ json.dump({"modelo_oficial": {"descricao": "média das probabilidades de 5 HistG
                                    "limiar_minutos_TP0": pacote["sem_cestao1_reserva"]["limiar_minutos_TP0"],
                                    "limiar_minutos_TP1": pacote["sem_cestao1_reserva"]["limiar_minutos_TP1"]},
            "treinado_em": "treino + validação + teste (todos os dados)", "versao_sklearn": sklearn.__version__,
-           "antigo_planoA": "Random Forest, 6 features: ver historico_rf6/"},
+           "antigo_planoA": "Random Forest, 6 features: ver histórico do Git"},
           open(PASTA / "modelo_final.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 
 prev = []
@@ -510,13 +510,3 @@ for nome in FINALISTAS:
 pd.concat(prev).to_csv(PASTA / "previsoes_dev_teste.csv", index=False)
 for k in ["com_cestao1", "sem_cestao1_reserva"]:
     print(k, "limiares (TP=0, TP=1):", round(pacote[k]["limiar_minutos_TP0"], 4), round(pacote[k]["limiar_minutos_TP1"], 4))
-
-# conferência com o pacote da otimização (mesma receita, mesmos dados → mesmas chances)
-antigo = RAIZ / "otimizacao_minutos" / "modelo_minutos.joblib"
-if antigo.exists():
-    pa = joblib.load(antigo)
-    X = TUDO
-    pn = np.mean([m.predict_proba(X[F_OF])[:, 1] for m in pacote["com_cestao1"]["modelos"]], axis=0)
-    po = np.mean([m.predict_proba(X[pa["com_cestao1"]["features"]])[:, 1] for m in pa["com_cestao1"]["modelos"]], axis=0)
-    print("Mesmas chances do modelo da otimização:", np.allclose(pn, po, atol=1e-12),
-          "| mesmos limiares:", np.isclose(pacote["com_cestao1"]["limiar_minutos_TP0"], pa["com_cestao1"]["limiar_minutos_TP0"]))

@@ -26,7 +26,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 warnings.filterwarnings("ignore")
 AQUI = Path(__file__).resolve().parent
 RAIZ = AQUI.parent
-D = pd.read_csv(RAIZ / "feature_selection" / "dataset_features_completo.csv")   # o mesmo dataset_minutos.csv de antes
+D = pd.read_csv(RAIZ / "feature_selection" / "dataset_features_completo.csv")
 D["t_ini"] = pd.to_datetime(D.t_ini, utc=True, format="mixed"); D["min_parada"] = D.min_parada.fillna(0)
 D = D.sort_values("t_ini").reset_index(drop=True)
 F = json.load(open(RAIZ / "feature_selection" / "features_finais.json", encoding="utf-8"))["features_oficial"]

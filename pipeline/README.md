@@ -28,7 +28,7 @@ docker compose run --rm treino --de analise
 docker compose run --rm treino --apenas testes
 ```
 
-Sem Docker, os mesmos comandos funcionam em Python 3.13: `pip install -r pipeline/requirements.txt`, depois `python pipeline/treinar.py` ou `python pipeline/prever.py`.
+Sem Docker, os mesmos comandos funcionam em Python 3.13: `pip install -r requirements.txt`, depois `python pipeline/treinar.py` ou `python pipeline/prever.py`.
 
 ## O treino
 
@@ -36,7 +36,7 @@ Roda, em ordem, os scripts que já existem em cada pasta, sem alterá-los. Para 
 
 | Etapa | O que faz |
 |---|---|
-| `dados` | Confere os 4 arquivos de `original_dataset/` e leva para `EDA/` |
+| `dados` | Confere os 4 arquivos de `original_dataset/` |
 | `limpeza` | `EDA/transforma_dataset.py` |
 | `eda` | `EDA/EDA.py` |
 | `features` | `feature_selection/feature_selection.py` |

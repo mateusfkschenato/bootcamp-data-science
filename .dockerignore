@@ -3,7 +3,7 @@
 *
 !comum/*.py
 !pipeline/*.py
-!pipeline/requirements.txt
+!requirements.txt
 !EDA/*.py
 !feature_selection/*.py
 !selecao_algoritmos/*.py

@@ -9,7 +9,7 @@ Segue a aula de Feature Selection do bootcamp, o Guia de FE/FS da EVCOMX e, na r
 
 Esta pasta entrega o **dataset de modelagem** desse modelo (`dataset_modelagem_fs.csv`).
 
-> **Antes (out/2026), o conjunto final era de 6 features**, escolhidas por votação entre seis métodos (filtro, RFE, L1, Elastic Net, permutação, Boruta) para uma Random Forest: `densidade_media`, `prop_peso_pesado`, `peso_por_ciclo_t`, `taxa_ca_ult5`, `taxa_ca_ult10` e `prop_PACB`. Esse caminho está em [`historico_rf6/`](historico_rf6/README.md). Ele foi superado quando a EVCOMX deu o critério de negócio (**menos minutos de forno perdidos**). No walk-forward, as 6 features perdem **~130 min a mais** que as 121 (744 × 616 min, com o mesmo algoritmo; seção 9).
+> **Antes (out/2026), o conjunto final era de 6 features**, escolhidas por votação entre seis métodos (filtro, RFE, L1, Elastic Net, permutação, Boruta) para uma Random Forest: `densidade_media`, `prop_peso_pesado`, `peso_por_ciclo_t`, `taxa_ca_ult5`, `taxa_ca_ult10` e `prop_PACB`. Esse caminho foi superado quando a EVCOMX deu o critério de negócio (**menos minutos de forno perdidos**). No walk-forward, as 6 features perdem **~130 min a mais** que as 121 (744 × 616 min, com o mesmo algoritmo; seção 9).
 
 ### Como rodar
 
@@ -23,7 +23,7 @@ O código acha a raiz do projeto sozinho. O protocolo comum (minutos, walk-forwa
 | Arquivo | O que é |
 |---|---|
 | **`dataset_modelagem_fs.csv`** | **O dataset de modelagem do modelo oficial:** metadados (`cd_corrida`, `nu_carregamento`, `conjunto`, `inicio`, `t`, `t_ini`, `t_fim`, `mes`), as **121 features**, `carga_alta` e `min_parada` |
-| `dataset_features_completo.csv` | Tudo o que foi calculado (140 colunas), incluindo as versões `_lag2` do histórico. É o mesmo arquivo que gerou o modelo na otimização: o script confere, coluna a coluna |
+| `dataset_features_completo.csv` | Tudo o que foi calculado (140 colunas), incluindo as versões `_lag2` do histórico |
 | `features_finais.json` | As listas (oficial com 121, sem o cestão 1 com 120, lag2 com 108, as 6 antigas), os 10 grupos e as 5 variantes de hiperparâmetro |
 | `tabela_features_finais.csv` | **Entregável do Guia de Modelagem (§3.2)**, feature a feature: grupo, como se calcula, por que entra, quando está disponível, sinal, informação mútua e permutação |
 | `grupos_features.csv` | O mesmo, por grupo, com a permutação e a ablação |
@@ -32,14 +32,6 @@ O código acha a raiz do projeto sozinho. O protocolo comum (minutos, walk-forwa
 
 - **`conjunto`** traz o split 70/15/15 temporal (treino / validacao / teste), definido pelo professor.
 - **`inicio`, `t`, `t_ini`, `t_fim` e `mes` não são features**; **`min_parada` também não**: ela só existe depois da carga alta e serve só para medir minutos perdidos.
-
-### Decisões
-
-- **Unidade de análise:** o cestão (carregamento 1 ou 2). É a pergunta operacional e permite usar o cestão 1 como contexto do 2.
-- **Camadas:** só as de 2.000 kg ou mais (EDA, corte dado pela EVCOMX).
-- **Split:** 70/15/15 em ordem de tempo, por corrida. Dev = treino + validação.
-- **Métricas de seleção:** **minutos perdidos** no walk-forward (régua da EVCOMX: carga alta perdida = duração da parada; alarme falso = 1 min) e **PR-AUC** (a métrica principal do grupo; só ~16% dos cestões têm carga alta).
-- **Algoritmo fixo nas comparações:** os 5 Gradient Boosting do modelo oficial (e a RF antiga como referência).
 
 ### As 121 features em 10 grupos
 
@@ -57,37 +49,6 @@ O código acha a raiz do projeto sozinho. O protocolo comum (minutos, walk-forwa
 | **Resultado do cestão 1** | 1 | no cestão 2, 1 se o cestão 1 da mesma corrida deu carga alta | **confirmado pela EVCOMX (31/out/2026)**; no cestão 1 vale 0 |
 
 **Features proibidas por vazamento** (Guia §1.2): duração da parada, o alvo da própria corrida, data/hora de início como número e qualquer dado medido de energia ou fusão da corrida. A `energia_estimada_mwh` é só a energia típica de cada material vezes o peso: uma propriedade da receita.
-
-### Passo a passo do Guia (§3.1) e onde está
-
-| Passo | Onde | Resultado |
-|---|---|---|
-| 1. Filtros simples (constantes, quase constantes, vazias) | §3 | `fundo_pesado` sai (99,8% igual): sobram 84 candidatas |
-| 2. Redundância | §7 | 73 pares com \|r\| > 0,90 (58 features). **Não cortamos para árvores** (abaixo) |
-| 3. Relevância univariada | §6 | Mann-Whitney significativo em 73 de 121; nenhuma feature "boa demais" |
-| 4. Importância via modelo: **permutação na validação** | §8 | Por grupo, gráfico 02 |
-| 5. Wrapper | §9 | **Tirar um grupo de cada vez no walk-forward**, gráfico 03 |
-| 6. Todas × selecionadas × baseline mínimo | §9 | 121 × 84 × 6 × "só volume" |
-
-**Filtro (§6).** No treino, as features mais informativas são as de pesado e densidade (e suas versões `rel_`), a gusa e o histórico curto. A melhor sozinha é `rel_prop_peso_pesado`, com PR-AUC 0,35 (chute: 0,16): nada sugere vazamento. **O volume total sozinho fica no nível do chute** (0,17); densidade (0,32) e proporção de pesado (0,34) carregam o sinal.
-
-**Redundância (§7): por que não cortamos.** Há muita redundância estrutural (`h_taxa5` e `taxa_ca_ult5` são a mesma conta; `rel_` é a feature menos uma média). Na rodada da RF, a regra |r| > 0,90 + VIF < 10 tirava as repetidas. Para o Gradient Boosting, não: árvores não têm coeficientes para inflar, o VIF foi feito para modelos lineares, e o teste que importa (seção 9) mostra que tirar grupos não melhora além do ruído. O custo é na interpretação: por isso a permutação e a Aula 08 embaralham **grupos**.
-
-### Permutação por grupo na validação (§8, gráfico 02)
-
-O oficial treina no treino e prevê a validação (PR-AUC 0,450; chute 0,179). Embaralhando um grupo inteiro de cada vez:
-
-| Grupo | Queda da PR-AUC |
-|---|---|
-| **Histórico do forno** | **0,139** |
-| Massa, volume e densidade | 0,071 |
-| **Resultado do cestão 1** | 0,068 |
-| Gusa líquida | 0,045 |
-| Tempo e turno | 0,023 |
-| Materiais, ritmo, contexto do cestão 1 | ≤ 0,01 |
-| Ordem e ciclos, regime recente | ~0 (dentro do ruído) |
-
-Uma feature sozinha cai bem menos: as cópias se cobrem. A maior queda individual é a do `carga_alta_c1` (0,06), que não tem cópia.
 
 ### A decisão: tirar um grupo de cada vez, no walk-forward (§9, gráfico 03)
 

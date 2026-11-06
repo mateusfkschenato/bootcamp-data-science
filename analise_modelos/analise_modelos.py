@@ -7,7 +7,7 @@
 #
 # **Modelo analisado: o oficial**, a média de 5 Gradient Boosting com 121 features (120 +
 # o resultado do cestão 1). Ao lado dele: a reserva (sem o cestão 1), a versão com histórico "lag2",
-# a **RF de 6 features (o antigo plano A, guardado em `historico_rf6/`)** e a regra do histórico.
+# a **RF de 6 features (o antigo plano A, guardado no histórico do Git)** e a regra do histórico.
 #
 # **Esta etapa não escolhe nada.** Lê as previsões da seleção (`previsoes_dev_teste.csv`): no dev,
 # as do walk-forward mensal (sempre fora da amostra); no teste, as dos modelos treinados no dev.

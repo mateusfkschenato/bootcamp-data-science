@@ -1,3 +1,5 @@
+<img src="app_streamlit/static/marca/arcanum_logo.png" alt="Arcanum" width="260">
+
 # Previsão de carga alta no forno elétrico a arco
 
 Projeto final do bootcamp de Ciência de Dados do Fundo Amanhã, feito com dados reais da **EVCOMX**.
@@ -57,21 +59,11 @@ Vale alarmar quando o custo esperado de não alarmar supera o de alarmar:
 
 $$p \times C_{FN} > (1 - p) \times C_{FP} \quad\Rightarrow\quad p > \frac{C_{FP}}{C_{FP} + C_{FN}}$$
 
-| Custo do FN usado na conta | Limiar teórico |
-|---|---|
-| Média (3,9 min) | 1 / 4,9 ≈ **0,20** |
-| Mediana (2,85 min) | 1 / 3,85 ≈ **0,26** |
-| O que 0,18 implica | FN ≈ **4,6 min** |
-
-**O limiar do modelo não sai dessa fórmula.** Ele é o que deu menos minutos perdidos nos dados passados: 0,178 no dev, usado no teste, e 0,183 no modelo para uso. A conta serve de conferência: o valor encontrado nos dados fica perto do que o custo prevê, e isso só funciona porque as chances do modelo estão calibradas (no dev, chance média de 16,0% para taxa real de 16,3%).
-
-No teste, o limiar do dev deu **131 min**, contra **124 min** do melhor limiar possível (0,19), que só se saberia olhando o teste.
-
-**O que 0,18 não significa:** não é "o modelo tem só 18% de certeza", nem sinal de modelo fraco. É o ponto a partir do qual alarmar compensa, dado que perder uma carga alta custa cerca de 4 vezes mais que um alarme falso. Com a taxa de carga alta em 16% dos cestões, esse limiar alarma em 29 de cada 100 cestões no teste.
+Com o FN médio de 3,9 min, a conta dá 1 / 4,9 ≈ **0,20**. O limiar do modelo não sai da fórmula: é o que deu menos minutos perdidos no passado (0,178 no dev, usado no teste, e 0,183 no modelo para uso). A conta só confere que o valor faz sentido, e isso funciona porque as chances do modelo estão calibradas.
 
 **O limiar depende da premissa.** Se o alarme certo também custar 1 min, o limiar de menos minutos sobe para **0,30**. O app mostra as duas opções.
 
-> **Como o projeto chegou aqui.** Até out/2026 o modelo era uma **Random Forest com 6 features**, escolhida pela PR-AUC na validação. Quando a EVCOMX deu o critério de minutos e confirmou o timing do cestão 1, a modelagem foi refeita ([`otimizacao_minutos/`](otimizacao_minutos/README.md): 168 configurações no dev, finalistas registrados antes, teste aberto uma vez). O vencedor virou o modelo oficial e **todas as etapas foram refeitas em cima dele**. O material da RF ficou em `historico_rf6/` dentro de cada pasta, e ela continua como linha de comparação nas tabelas.
+> **Como o projeto chegou aqui.** Até out/2026 o modelo era uma **Random Forest com 6 features**, escolhida pela PR-AUC na validação. Quando a EVCOMX deu o critério de minutos e confirmou o timing do cestão 1, a modelagem foi refeita ([`otimizacao_minutos/`](otimizacao_minutos/README.md): 168 configurações no dev, finalistas registrados antes, teste aberto uma vez). O vencedor virou o modelo oficial e **todas as etapas foram refeitas em cima dele**. O material da RF saiu do repositório (fica no histórico do Git, commit `f849472`), e ela continua como linha de comparação nas tabelas.
 
 ---
 

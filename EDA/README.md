@@ -2,7 +2,7 @@
 
 Projeto final do bootcamp de ciência de dados, em parceria com a EVCOMX: um modelo de classificação que prevê se uma receita de cestão vai gerar **carga alta** no forno elétrico a arco (FEA) durante o carregamento de sucata.
 
-> **Atualização (nov/2026): a EDA e o modelo oficial.** O modelo oficial do projeto é a **média de 5 Gradient Boosting com 121 features** (ver `selecao_algoritmos/`). Ele se apoia muito em três informações que não estão na receita do cestão. A EDA ganhou o **ITEM 9** para mostrar, nos dados brutos, que elas existem e o tamanho delas (gráfico `14_sinais_do_modelo_oficial.png`). Os itens 1 a 8 não mudaram: a limpeza e o `base.csv` são os mesmos que alimentam todas as etapas. Antes, o modelo era uma Random Forest com 6 features (registro em `*/historico_rf6/`).
+> **Atualização (nov/2026): a EDA e o modelo oficial.** O modelo oficial do projeto é a **média de 5 Gradient Boosting com 121 features** (ver `selecao_algoritmos/`). Ele se apoia muito em três informações que não estão na receita do cestão. A EDA ganhou o **ITEM 9** para mostrar, nos dados brutos, que elas existem e o tamanho delas (gráfico `14_sinais_do_modelo_oficial.png`). Os itens 1 a 8 não mudaram: a limpeza e o `base.csv` são os mesmos que alimentam todas as etapas. Antes, o modelo era uma Random Forest com 6 features.
 >
 > | Sinal (ITEM 9) | O que os dados mostram |
 > |---|---|
@@ -19,7 +19,7 @@ O pipeline está dividido em dois arquivos, nessa ordem obrigatória:
 
 Os dois arquivos usam marcadores `#%%`, então também dá pra rodar célula por célula no VS Code / Jupyter, na ordem em que aparecem.
 
-### Arquivos de entrada (brutos, fornecidos pela EVCOMX)
+### Arquivos de entrada (brutos, em `original_dataset/`)
 
 - `infos_camadas.csv` — uma linha por corrida + carregamento + camada + material (peso, horário, baia).
 - `infos_materiais.csv` — propriedades por material (densidade, rendimento metálico, energia elétrica). A coluna `Metálico` é, na prática, o código do material, apesar do nome.
@@ -64,9 +64,7 @@ Organizada pelos itens do checklist de EDA do bootcamp:
 
 ### Pontos ainda em aberto
 
-- ~~Confirmar com a EVCOMX se as camadas de peso muito baixo (ex.: 10 kg, 326 linhas) também são "gancho que não pegou".~~ Respondido: sim, e o corte passa a ser 2.000 kg (ver acima).
 - Nos dados, o ciclo aparece tanto como L→P→M quanto como L→M→P. Confirmar se as duas ordens contam como ciclo.
 
 - Propriedades de RECC/RECG (sem densidade/energia/rendimento no dicionário): aguardando resposta do cliente.
 - 28 linhas com chave corrida+carregamento+camada repetida: precisa investigar antes de decidir o que fazer.
-- Escrever o fechamento (ITEM 10): principais conclusões, o que confirma ou contradiz o que o Guia da EVCOMX já descreve, e limitações dos dados a reportar pra EVCOMX.

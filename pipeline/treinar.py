@@ -12,7 +12,6 @@ O pipeline para na primeira etapa que falhar. O log de cada uma fica em pipeline
 import argparse
 import json
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -36,7 +35,7 @@ class Etapa:
 
 
 ETAPAS = [
-    Etapa("dados", "confere os 4 arquivos brutos e leva para EDA/", None),
+    Etapa("dados", "confere os 4 arquivos brutos", None),
     Etapa("limpeza", "limpa os dados e gera EDA/base.csv", ["EDA/transforma_dataset.py"], "EDA"),
     Etapa("eda", "gráficos da análise exploratória", ["EDA/EDA.py"], "EDA", "1"),
     Etapa("features", "121 features e dataset de modelagem", ["feature_selection/feature_selection.py"], ".", "20"),
@@ -50,21 +49,12 @@ ETAPAS = [
 ]
 
 
-def _texto(caminho: Path) -> bytes:
-    return caminho.read_bytes().replace(b"\r\n", b"\n")
-
-
 def etapa_dados(log) -> None:
-    """Os scripts da EDA leem os brutos de dentro de EDA/. Copia só o que estiver diferente."""
+    """Confere se os 4 arquivos brutos estão em original_dataset/ antes de começar."""
     faltam = [a for a in ARQUIVOS_BRUTOS if not (BRUTOS / a).exists()]
     if faltam:
         raise FileNotFoundError(f"Faltam arquivos em original_dataset/: {', '.join(faltam)}")
-    for a in ARQUIVOS_BRUTOS:
-        destino = RAIZ / "EDA" / a
-        igual = destino.exists() and _texto(destino) == _texto(BRUTOS / a)
-        if not igual:
-            shutil.copy2(BRUTOS / a, destino)
-        log.write(f"{a}: {'já estava igual' if igual else 'copiado para EDA/'}\n")
+    log.write("Os 4 arquivos brutos estão em original_dataset/.\n")
 
 
 def rodar(etapa: Etapa) -> float:

@@ -6,7 +6,7 @@ Segue a **Aula 07 do bootcamp** (Verificação e Validação de Modelos) e o **G
 
 **Modelo verificado: o oficial**, a média de 5 Gradient Boosting com 121 features (120 + o resultado do cestão 1), de `selecao_algoritmos/modelo_final.joblib`.
 
-> **Antes (out/2026), esta pasta verificava a Random Forest de 6 features** (31 conferências, critérios de aceitação em orçamento de alarmes). Está em [`historico_rf6/`](historico_rf6/README.md).
+> **Antes (out/2026), esta pasta verificava a Random Forest de 6 features** (31 conferências, critérios de aceitação em orçamento de alarmes).
 
 **Esta etapa não escolhe nada.** O script **para com erro** se algum número das etapas anteriores não bater.
 
@@ -64,10 +64,6 @@ Para recalcular a receita com camadas alteradas (erro de balança, corte de peso
 
 O gap do treino é grande (é um modelo de árvores), mas o que importa é o fora da amostra, e ele é estável entre 0,45 e 0,57. **Complexidade:** com 300 árvores (o usado), a validação está no topo (0,44); com 600 e 1.200, o treino vai a 1,00 e a validação começa a cair. O modelo está no ponto, não sobreajustado.
 
-### 3. O teste não é uma segunda validação (slides 15 e 29)
-
-`uso_validacao_e_teste.csv` registra cada uso. O teste foi aberto **uma vez** para decidir (na otimização, 31/out/2026, para finalistas registrados antes, com a condição do cestão 1) e uma "segunda olhada" só para conferir um candidato do dev, que perdeu. Todos os outros usos são medições depois da escolha. O grupo já tinha visto este teste nas rodadas da RF: por isso nada foi escolhido olhando para ele.
-
 ### 4. Validação cruzada: limites e cuidados (slide 27; gráfico 02)
 
 | Validação (mesma receita, dev) | PR-AUC |
@@ -118,10 +114,6 @@ As features foram refeitas a partir do arquivo bruto com cada corte, e o oficial
 
 A PR-AUC fica em 0,57–0,58 com qualquer corte; os minutos variam dentro do ruído. Partindo do bruto, o corte de 2.000 kg não reproduz exatamente o oficial (0,570 × 0,567; o bruto não passa por toda a limpeza da EDA); a comparação justa é entre as linhas.
 
-### 5d. Variação por semente
-
-**Nenhuma.** Com 20 sementes, a PR-AUC e os minutos são idênticos. No HGB, a semente só é usada no early stopping e na subamostragem, e nenhum dos dois está ligado aqui (menos de 10.000 cestões): o modelo é determinístico. A variação que importa é a dos **hiperparâmetros** (seleção, seção 7: as 5 variantes vão de 576 a 644 min), e é por isso que o oficial é a média delas.
-
 ### 6.1 Critérios de aceitação (slide 35)
 
 Proposta do grupo, em minutos, para **o próximo lote** (o teste atual já foi visto; aqui é ilustração). O orçamento de alarmes (4 por dia) é um parâmetro a confirmar com a EVCOMX.
@@ -138,21 +130,6 @@ Proposta do grupo, em minutos, para **o próximo lote** (o teste atual já foi v
 
 - **C4 no dev:** as faixas 5–10% e 10–20% empatam (13%). As fronteiras das faixas devem ser revistas a cada re-treino, pelo volume (ex.: os 10% de maior risco = "muito alto").
 - **C7** fica registrado como não atingido: no teste, a economia de minutos sobre a regra do histórico ainda cabe no ruído.
-
-### 6.2 Monitoramento (slide 34; gráfico 05)
-
-Simulação do oficial operando no teste, em janelas de ~10 dias. Gatilhos: **G1** PSI > 0,25 numa feature da receita ou da gusa (contra os últimos 60 dias antes da operação); **G2** alarmes/100 fora de ±15 do esperado; **G3** economia < 20%; **G4** perde para a regra.
-
-| Janela | Cestões | Cargas altas | Alarmes/100 | Minutos (sem modelo) | Regra | Gatilhos |
-|---|---|---|---|---|---|---|
-| dias 0–10 | 188 | 20 | 22 | 53 (76) | 57 | G1 |
-| 11–20 | 201 | 5 | 9 | 24 (13) | 13 | G1, G2, G3, G4 |
-| 21–30 | 78 | 33 | 69 | 32 (100) | 49 | G1, G2 |
-| 31–40 | 48 | 17 | 73 | 22 (62) | 29 | G1, G2 |
-
-- **O alarme acompanha o forno:** quando as cargas altas aumentam (dias 21–40), os alarmes sobem junto (69–73 a cada 100). É o histórico funcionando, mas dispara o G2.
-- **Na janela calma (dias 11–20, só 5 cargas altas), o modelo perde minutos** (24 com o modelo contra 13 sem): 18 alarmes falsos custam mais que as poucas paradas evitadas. É o custo fixo do alarme falso num período calmo.
-- **Janelas de 10 dias são curtas demais para o PSI** (G1 em todas). **Proposta:** PSI e critérios **mensais**, só sobre receita e gusa; G2 olhando junto a taxa real de carga alta (alarme alto com forno agitado não é defeito); re-treino a cada 3 meses ou quando G3/G4 se repetirem em 2 meses seguidos, rodando esta verificação de novo.
 
 ### 6.3 Validação de domínio: faz sentido físico? (Guia §6.3)
 
@@ -182,27 +159,9 @@ Os 4 sentidos batem com a física e com o que os dados mostram (EDA, item 9).
 
 **O ganho depende do que o pátio faz com o alarme.** Se o reajuste evita a parada inteira, o modelo economiza metade dos minutos. Se evita só metade da parada, o ganho praticamente some; se além disso o alarme certo custar 1 min, o modelo dá prejuízo. **É a pergunta mais importante para a EVCOMX agora**, mais que qualquer ajuste no modelo.
 
-### 7. Registro do experimento (slide 30)
-
-`registro_experimento.json` guarda a receita (5 variantes, semente, 121 features em 10 grupos), o limiar, o split, a régua, o resultado do teste, os **hashes** dos arquivos de dados e as versões das bibliotecas. `requirements_rodada.txt` fixa as versões.
-
 ### 8. Conclusão: podemos confiar no modelo? (slides 37 e 38)
 
 - **Foi construído como dissemos:** 29 conferências, nenhuma falha; alvo embaralhado vai ao chute; contas refeitas à mão.
 - **Funciona fora da amostra, de forma estável:** walk-forward 0,50, validação 0,45, teste 0,57; economia em todos os meses; robusto a erro de balança, ao corte de peso e à semente.
 - **Faz sentido físico** nos 4 sentidos testados.
 - **O que ainda não está provado:** que ele economiza mais minutos que a regra simples do histórico (dentro do ruído no teste), e **quanto da parada o reajuste realmente evita** (seção 6.4). As duas respostas vêm do próximo lote e de um piloto no pátio.
-
-### O que depende da EVCOMX
-
-| Pergunta | Muda o quê |
-|---|---|
-| O reajuste evita a parada inteira? O alarme certo custa 1 min? | A economia vai de 48% a quase zero (6.4) |
-| Quantos alarmes por dia o pátio aguenta? | O critério C5 e o limiar |
-| O que mudou em maio/2026? | Se a receita mudou de vez, o drift da seção 5 é o novo normal |
-
-### Limitações
-
-- **Teste pequeno** (75 cargas altas). A janela de monitoramento de 10 dias tem poucas cargas altas.
-- **O recálculo da receita** (seções 5c e 6.3) usa a conta do app; as médias móveis das `rel_` ficam as originais.
-- **scikit-learn 1.9.1.**

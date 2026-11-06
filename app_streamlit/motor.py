@@ -61,7 +61,7 @@ def carregar_momentos() -> pd.DataFrame:
 
 
 def carregar_exemplos() -> list[dict]:
-    """Corridas prontas para demonstração: receitas reais do período de teste."""
+    """Corridas prontas para demonstração: receitas reais do período de teste e uma simulada."""
     return json.loads((PASTA_DADOS / "exemplos_corrida.json").read_text(encoding="utf-8"))
 
 
@@ -110,78 +110,99 @@ def validar_insercao(camadas: list[Camada], nova: Camada, materiais: pd.DataFram
 
 
 # ====================================================================== features da receita
-def _tabela(camadas: list[Camada], materiais: pd.DataFrame) -> pd.DataFrame:
-    df = pd.DataFrame([{"codigo": c.codigo, "peso_t": float(c.peso_t)} for c in camadas])
-    m = materiais.loc[df["codigo"]]
-    df["classe"] = m["classe"].values
-    df["volume_m3"] = df["peso_t"] / m["densidade"].values
-    df["rendimento"] = m["rendimento"].values
-    df["energia_kwh_t"] = m["energia_kwh_t"].values
-    n = len(df)
-    df["pos_rel"] = np.arange(n) / max(n - 1, 1)          # 0 = fundo, 1 = topo
-    return df
+_CACHE_MATERIAIS = (None, None)
+
+
+def _info_materiais(materiais: pd.DataFrame) -> dict:
+    """Tabela de materiais em dicionários: a busca de receitas consulta isso milhares de vezes."""
+    global _CACHE_MATERIAIS
+    if _CACHE_MATERIAIS[0] is not materiais:
+        info = {"linhas": materiais[["classe", "densidade", "rendimento", "energia_kwh_t"]].to_dict("index"),
+                "proprias": list(materiais.index[materiais["coluna_propria"]])}
+        _CACHE_MATERIAIS = (materiais, info)
+    return _CACHE_MATERIAIS[1]
 
 
 def features_receita(camadas: list[Camada], materiais: pd.DataFrame) -> dict:
-    """As features que dependem só das camadas do cestão (feature_selection.py, seções 2.1–2.3 e 2.5)."""
-    df = _tabela(camadas, materiais)
+    """As features que dependem só das camadas do cestão (feature_selection.py, seções 2.1–2.3 e 2.5).
+
+    Feita com NumPy, e não com pandas, porque a recombinação calcula isto centenas de vezes por clique."""
+    info = _info_materiais(materiais)
+    linhas = info["linhas"]
+    n = len(camadas)
+    codigos = [c.codigo for c in camadas]
+    dados = [linhas[c] for c in codigos]
+    classes = np.array([d["classe"] for d in dados])
+    pesos = np.array([float(c.peso_t) for c in camadas])
+    volumes = pesos / np.array([d["densidade"] for d in dados])
+    rendimentos = np.array([d["rendimento"] for d in dados])
+    energias = np.array([d["energia_kwh_t"] for d in dados])
+    pos_rel = np.arange(n) / max(n - 1, 1)                # 0 = fundo, 1 = topo
+
     f = {}
-    peso, vol = df["peso_t"].sum(), df["volume_m3"].sum()
+    peso, vol = pesos.sum(), volumes.sum()
     f["peso_t_total"], f["volume_m3_total"] = peso, vol
     f["ocupacao_cestao"] = vol / CAPACIDADE_M3
     f["densidade_media"] = peso / vol
     f["razao_vol_peso"] = vol / peso
-    f["peso_max_camada_t"] = df["peso_t"].max()
-    f["peso_medio_camada_t"] = df["peso_t"].mean()
+    f["peso_max_camada_t"] = pesos.max()
+    f["peso_medio_camada_t"] = pesos.mean()
     for classe, k in [("Leve", "leve"), ("Misto", "misto"), ("Pesado", "pesado")]:
-        m = df["classe"] == classe
-        f[f"peso_{k}"] = df.loc[m, "peso_t"].sum()
-        f[f"vol_{k}_m3"] = df.loc[m, "volume_m3"].sum()
+        m = classes == classe
+        f[f"peso_{k}"] = pesos[m].sum()
+        f[f"vol_{k}_m3"] = volumes[m].sum()
         f[f"prop_peso_{k}"] = f[f"peso_{k}"] / peso
         f[f"prop_vol_{k}"] = f[f"vol_{k}_m3"] / vol
     f["prop_leve"] = f.pop("prop_peso_leve")
-    f["rendimento_medio"] = (df["rendimento"] * df["peso_t"]).sum() / peso
-    f["energia_estimada_mwh"] = (df["energia_kwh_t"] * df["peso_t"]).sum() / 1000
+    f["rendimento_medio"] = (rendimentos * pesos).sum() / peso
+    f["energia_estimada_mwh"] = (energias * pesos).sum() / 1000
     f["energia_por_ton"] = f["energia_estimada_mwh"] * 1000 / peso
 
-    f["num_camadas"] = len(df)
-    f["num_materiais"] = df["codigo"].nunique()
-    prop = df.groupby("codigo")["peso_t"].sum() / peso
-    f["hhi_materiais"] = float((prop ** 2).sum())
-    proprias = materiais.index[materiais["coluna_propria"]]
+    f["num_camadas"] = n
+    peso_por_codigo = {}
+    for cod, p in zip(codigos, pesos):
+        peso_por_codigo[cod] = peso_por_codigo.get(cod, 0.0) + p
+    prop = {cod: p / peso for cod, p in peso_por_codigo.items()}
+    f["num_materiais"] = len(prop)
+    f["hhi_materiais"] = float(sum(p ** 2 for p in prop.values()))
+    proprias = info["proprias"]
     for cod in proprias:
         f[f"prop_{cod}"] = float(prop.get(cod, 0.0))
-    f["prop_outros"] = float(prop[~prop.index.isin(proprias)].sum())
+    conjunto_proprias = set(proprias)
+    f["prop_outros"] = float(sum(p for cod, p in prop.items() if cod not in conjunto_proprias))
 
     # blocos (camadas seguidas da mesma classe) e ciclos (= blocos de pesado)
-    df["id_bloco"] = (df["classe"] != df["classe"].shift()).cumsum()
-    blocos = df.groupby("id_bloco").agg(classe=("classe", "first"), volume_m3=("volume_m3", "sum"))
+    blocos = []                                           # [classe, volume]
+    for classe, v in zip(classes.tolist(), volumes.tolist()):
+        if blocos and blocos[-1][0] == classe:
+            blocos[-1][1] += v
+        else:
+            blocos.append([classe, v])
     f["n_blocos"] = len(blocos)
     for classe, k in [("Leve", "leve"), ("Misto", "misto"), ("Pesado", "pesado")]:
-        bc = blocos[blocos["classe"] == classe]
-        f[f"n_blocos_{k}"] = len(bc)
-        f[f"max_bloco_{k}_m3"] = bc["volume_m3"].max() if len(bc) else 0.0
+        vols = [v for c, v in blocos if c == classe]
+        f[f"n_blocos_{k}"] = len(vols)
+        f[f"max_bloco_{k}_m3"] = max(vols) if vols else 0.0
     f["n_ciclos"] = f.pop("n_blocos_pesado")
-    seq = "".join(blocos["classe"].map({"Leve": "L", "Pesado": "P", "Misto": "M"}))
+    seq = "".join({"Leve": "L", "Pesado": "P", "Misto": "M"}[c] for c, _ in blocos)
     f["n_ciclos_LPM"] = sum(1 for i in range(len(seq)) if seq.startswith("LPM", i))
 
-    primeira, ultima = df["classe"].iloc[0], df["classe"].iloc[-1]
+    primeira, ultima = classes[0], classes[-1]
     for classe, k in [("Leve", "leve"), ("Misto", "misto"), ("Pesado", "pesado")]:
         f[f"fundo_{k}"] = int(primeira == classe)
         f[f"topo_{k}"] = int(ultima == classe)
     f["violacao_regra"] = int(primeira == "Pesado" or ultima == "Pesado")
 
-    topo30, base30 = df["pos_rel"] >= 0.7, df["pos_rel"] <= 0.3
-    leve, pesado = df["classe"] == "Leve", df["classe"] == "Pesado"
-    f["peso_topo_30pct_t"] = df.loc[topo30, "peso_t"].sum()
-    f["peso_base_30pct_t"] = df.loc[base30, "peso_t"].sum()
-    f["peso_leve_topo_t"] = df.loc[topo30 & leve, "peso_t"].sum()
+    topo30, base30 = pos_rel >= 0.7, pos_rel <= 0.3
+    leve, pesado = classes == "Leve", classes == "Pesado"
+    f["peso_topo_30pct_t"] = pesos[topo30].sum()
+    f["peso_base_30pct_t"] = pesos[base30].sum()
+    f["peso_leve_topo_t"] = pesos[topo30 & leve].sum()
     f["prop_leve_topo"] = f["peso_leve_topo_t"] / f["peso_topo_30pct_t"] if f["peso_topo_30pct_t"] else np.nan
-    f["prop_leve_base"] = df.loc[base30 & leve, "peso_t"].sum() / f["peso_base_30pct_t"] if f["peso_base_30pct_t"] else np.nan
+    f["prop_leve_base"] = pesos[base30 & leve].sum() / f["peso_base_30pct_t"] if f["peso_base_30pct_t"] else np.nan
 
     def pos_ponderada(m):
-        d = df[m]
-        return float((d["pos_rel"] * d["peso_t"]).sum() / d["peso_t"].sum()) if len(d) else np.nan
+        return float((pos_rel[m] * pesos[m]).sum() / pesos[m].sum()) if m.any() else np.nan
     f["pos_media_pesado"] = pos_ponderada(pesado)
     f["pos_media_leve"] = pos_ponderada(leve)
 
@@ -220,10 +241,12 @@ def linha_cestao(k: int, receitas: list[dict], codigos: list[set], momento: pd.S
     """As 120 features + carga_alta_c1 de um cestão (k = 1 ou 2).
 
     receitas[i] = features_receita do cestão i+1; codigos[i] = materiais do cestão i+1."""
+    if not isinstance(momento, dict):
+        momento = momento.to_dict()
     f = dict(receitas[k - 1])
     f.update(execucao)
     f.update({c: momento[f"c{k}_{c}"] for c in TEMPO})
-    f.update({c: momento[c] for c in momento.index if c.startswith(HIST_PREFIXOS)})
+    f.update({c: momento[c] for c in momento if c.startswith(HIST_PREFIXOS)})
 
     eh2 = k == 2
     c1 = receitas[0]
@@ -238,7 +261,7 @@ def linha_cestao(k: int, receitas: list[dict], codigos: list[set], momento: pd.S
     f["tem_gusl"] = int(f["gusl_t"] > 0)
     f["carga3_solida_t"] = 0.0
 
-    for nome in [c[len(f"c{k}_m_"):] for c in momento.index if c.startswith(f"c{k}_m_")]:
+    for nome in [c[len(f"c{k}_m_"):] for c in momento if c.startswith(f"c{k}_m_")]:
         f[f"rel_{nome}"] = f[nome] - momento[f"c{k}_m_{nome}"]
         f[f"rel2_{nome}"] = f[nome] - momento[f"c{k}_m2_{nome}"]
     f["carga_alta_c1"] = carga_alta_c1 if eh2 else 0
@@ -276,8 +299,29 @@ def prever_corrida(cestoes: list[list[Camada]], momento: pd.Series, gusa_t: floa
             p = float(chance(parte, [base(0)])[0])
         limiar = config["limiares"][nome][modo]
         r.update({"chance": p, "limiar": limiar, "alarme": p > limiar, "modelo": nome})
+        if k == 2 and resultado_c1 is None:
+            r["chance_se_c1_nao_deu"] = float(chance(pacote["com_cestao1"], [base(0)])[0])
         resultados.append(r)
-    return {"cestoes": resultados, "alarme_corrida": any(r["alarme"] for r in resultados)}
+    return {"cestoes": resultados, "alarme_corrida": any(r["alarme"] for r in resultados),
+            "corrida": chance_corrida(resultados, resultado_c1)}
+
+
+def chance_corrida(resultados: list[dict], resultado_c1: int | None) -> dict:
+    """Chance de a corrida dar carga alta em algum cestão (a coluna is_carga_alta).
+
+    P(corrida) = 1 - (1 - P1) x (1 - P2), com P2 = chance do cestão 2 SE o cestão 1 não der carga alta.
+    É a regra da cadeia, não supõe cestões independentes. Se o cestão 1 já é conhecido, a conta se reduz:
+    deu carga alta = 100%; não deu = só o risco do cestão 2.
+    Só informa: o alarme continua sendo decidido pelo limiar de minutos de cada cestão."""
+    p1 = resultados[0]["chance"]
+    if len(resultados) == 1:
+        return {"chance": p1, "caso": "um_cestao", "p1": p1}
+    if resultado_c1 == 1:
+        return {"chance": 1.0, "caso": "c1_deu", "p1": p1}
+    if resultado_c1 == 0:
+        return {"chance": resultados[1]["chance"], "caso": "c1_nao_deu", "p1": p1, "p2": resultados[1]["chance"]}
+    p2 = resultados[1]["chance_se_c1_nao_deu"]
+    return {"chance": 1 - (1 - p1) * (1 - p2), "caso": "c1_desconhecido", "p1": p1, "p2": p2}
 
 
 # ====================================================================== leitura das features
@@ -315,6 +359,7 @@ def sugerir_troca(cestoes: list[list[Camada]], k: int, momento: pd.Series, gusa_
     """Testa trocar UMA camada não pesada do cestão k por um material pesado comum, com o
     mesmo peso, e devolve a troca que mais baixa a chance desse cestão. É uma pergunta ao
     modelo, não uma regra de operação."""
+    momento = momento.to_dict()          # ler de dicionário é bem mais rápido, e a busca lê milhares de vezes
     antes = prever_corrida(cestoes, momento, gusa_t, resultado_c1, modo, pacote, materiais, config)
     alvo = antes["cestoes"][k - 1]
     parte = pacote["com_cestao1"] if alvo["modelo"] == "principal" else pacote["sem_cestao1_reserva"]
@@ -417,6 +462,7 @@ def recombinar_cestao(cestoes: list[list[Camada]], k: int, momento: pd.Series, g
 
     status: "ok" (fica abaixo do limiar), "parcial" (baixa, mas continua acima) ou
     "sem_solucao" (nenhuma mudança realista baixa pelo menos GANHO_MINIMO)."""
+    momento = momento.to_dict()          # ler de dicionário é bem mais rápido, e a busca lê milhares de vezes
     antes = prever_corrida(cestoes, momento, gusa_t, resultado_c1, modo, pacote, materiais, config)
     alvo = antes["cestoes"][k - 1]
     original = cestoes[k - 1]

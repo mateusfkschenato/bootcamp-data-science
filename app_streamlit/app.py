@@ -1,5 +1,5 @@
 """
-Simulador de carga alta · EVCOMX
+Arcanum: simulador de carga alta · EVCOMX
 Monte uma corrida (cestão 1, cestão 2 e a gusa líquida), camada por camada, e o
 modelo escolhido do projeto (média de 5 Gradient Boosting,
 selecao_algoritmos/modelo_final.joblib) diz se ela deve dar carga alta.
@@ -7,8 +7,9 @@ selecao_algoritmos/modelo_final.joblib) diz se ela deve dar carga alta.
 Rodar (de dentro desta pasta):
     python -m streamlit run app.py
 """
+import base64
+from pathlib import Path
 import copy
-import importlib
 import math
 
 import streamlit as st
@@ -17,26 +18,24 @@ import streamlit.components.v1 as components
 import desenho
 import motor
 
-# O Streamlit roda o app.py de novo a cada clique, mas guarda na memória os módulos
-# importados. Recarregar garante que mudanças em motor.py e desenho.py apareçam
-# sem precisar reiniciar o servidor.
-importlib.reload(motor)
-importlib.reload(desenho)
+from desenho import BRANCO, CINZA, CINZA_CLARO, CINZA_LINHA, FONTE, LARANJA, LARANJA_ESCURO, PRETO
 
-from desenho import BRANCO, CINZA, CINZA_CLARO, CINZA_LINHA, FONTE, FONT_FACE, LARANJA, LARANJA_ESCURO, PRETO
-
-st.set_page_config(page_title="Simulador de Carga Alta | EVCOMX", page_icon="🔥", layout="wide",
-                   initial_sidebar_state="collapsed")
+MARCA = Path(__file__).parent / "static" / "marca"
+st.set_page_config(page_title="Arcanum | Simulador de Carga Alta", page_icon=str(MARCA / "arcanum_favicon.png"),
+                   layout="wide", initial_sidebar_state="collapsed")
+# Fica fixo no topo: logo inteiro na barra lateral (preta) e só o símbolo com ela fechada (fundo branco).
+st.logo(str(MARCA / "arcanum_horizontal_escuro.png"), size="large", icon_image=str(MARCA / "arcanum_icone.png"))
+LOGO_CABECALHO = base64.b64encode((MARCA / "arcanum_logo_escuro.png").read_bytes()).decode()
 
 
 # ====================================================================== carga (uma vez só)
 @st.cache_resource
 def carregar():
-    return (motor.carregar_modelo(), motor.carregar_materiais(), motor.carregar_config(), motor.carregar_momentos(),
-            motor.carregar_exemplos())
+    return (motor.carregar_modelo(), motor.carregar_materiais(), motor.carregar_config(), motor.carregar_momentos())
 
 
-PACOTE, MATS, CFG, MOMENTOS, EXEMPLOS = carregar()
+PACOTE, MATS, CFG, MOMENTOS = carregar()
+EXEMPLOS = motor.carregar_exemplos()  # fora do cache: editar o JSON já muda a lista
 EXEMPLO_POR_NOME = {e["nome"]: e for e in EXEMPLOS}
 GUSA = CFG["gusa"]
 GUSA_PADRAO_T = 35.0      # número redondo perto da mediana real (34,3 t)
@@ -44,7 +43,6 @@ MODOS = list(CFG["limiares"]["principal"])
 # Histórico, ritmo e horário vêm de um momento real do forno, escolhido na tela (ver README).
 MOMENTOS_FORNO = list(CFG["presets_momento"])
 NOME_MOMENTO = {"Forno típico": "Típico", "Forno calmo": "Calmo", "Forno numa sequência de cargas altas": "Agitado"}
-RESULTADO_C1 = {"Ainda não sei": None, "Não deu carga alta": 0, "Deu carga alta": 1}
 
 
 def _momento(nome):
@@ -77,7 +75,7 @@ def recombinar(receita, k, gusa_t, modo, momento_forno, resultado_c1):
 # ====================================================================== estado
 def _iniciar_estado():
     padrao = {"corrida": None, "ativo": 1, "anim": None, "erro": None, "n_corridas": 0, "modo": MODOS[0],
-              "momento_forno": MOMENTOS_FORNO[0], "resultado_c1": "Ainda não sei", "receita_antes": None,
+              "momento_forno": MOMENTOS_FORNO[0], "receita_antes": None,
               "exemplo_ativo": None}
     for k, v in padrao.items():
         if k not in st.session_state:
@@ -120,7 +118,6 @@ def carregar_exemplo(chave):
     ss.erro = None
     ss.receita_antes = None
     ss.momento_forno = e["momento"]
-    ss.resultado_c1 = e["resultado_c1"]
     ss.exemplo_ativo = e["nome"]
 
 
@@ -230,22 +227,29 @@ def descartar_corrida():
 # ====================================================================== estilo (identidade EVCOMX)
 CSS = f"""
 <style>
-{FONT_FACE}
 /* fonte da EVCOMX em tudo (o tema já aplica; isto cobre o que sobrar), menos os ícones do Streamlit */
 html, body, .stApp, .stApp *:not([data-testid="stIconMaterial"]):not(code):not(pre),
 div[data-baseweb="popover"] * {{ font-family: {FONTE}; }}
 /* sem o botão de link (âncora) ao lado dos títulos */
 [data-testid="stHeaderActionElements"], .stApp h1 a[href^="#"], .stApp h2 a[href^="#"],
 .stApp h3 a[href^="#"], .stApp h4 a[href^="#"] {{ display: none !important; }}
-/* espaço para a barra do Streamlit não cortar o cabeçalho */
-header[data-testid="stHeader"] {{ background: transparent; }}
+/* barra do topo: fundo branco para o símbolo do Arcanum seguir legível ao rolar a página */
+header[data-testid="stHeader"] {{ background: rgba(255, 255, 255, .94); backdrop-filter: blur(6px); }}
 .block-container {{ padding-top: 3.6rem; max-width: 1400px; }}
 
 h1, h2, h3, h4 {{ color: {PRETO}; font-weight: 700 !important; letter-spacing: .3px; }}
 .stApp a {{ color: {LARANJA_ESCURO}; }}
 
 .cabecalho {{ background: {PRETO}; border-radius: 18px; padding: 22px 28px 20px; color: {BRANCO};
-             border-bottom: 6px solid {LARANJA}; margin: 0 0 18px; overflow: visible; }}
+             border-bottom: 6px solid {LARANJA}; margin: 0 0 18px; overflow: visible;
+             display: flex; align-items: center; gap: 26px; }}
+.cabecalho .logo {{ height: 104px; width: auto; flex: none; }}
+.cabecalho .texto {{ min-width: 0; padding-left: 26px; border-left: 1px solid #3A3A3A; }}
+@media (max-width: 700px) {{
+    .cabecalho {{ flex-direction: column; align-items: flex-start; gap: 14px; }}
+    .cabecalho .texto {{ padding-left: 0; border-left: 0; }}
+    .cabecalho h1 {{ font-size: 26px; }}
+}}
 .cabecalho .marca {{ letter-spacing: 4px; font-weight: 700; font-size: 13px; color: {LARANJA}; font-family: {FONTE}; }}
 .cabecalho h1 {{ color: {BRANCO} !important; margin: 6px 0 0; font-size: 32px; line-height: 1.2; padding: 0; font-family: {FONTE}; }}
 .cabecalho p {{ margin: 8px 0 0; color: #CFCFCF; font-size: 15px; font-family: {FONTE}; }}
@@ -292,9 +296,12 @@ section[role="dialog"] svg {{ color: {BRANCO}; }}
            font-family: {FONTE}; }}
 </style>
 <div class="cabecalho">
+  <img class="logo" src="data:image/png;base64,{LOGO_CABECALHO}" alt="Arcanum">
+  <div class="texto">
   <div class="marca">EVCOMX · FUNDO AMANHÃ · BOOTCAMP DATA SCIENCE 2026</div>
   <h1>Simulador de carga alta no forno elétrico a arco</h1>
   <p>Monte a receita da corrida, camada por camada, e veja se o modelo do projeto prevê <b>carga alta</b>.</p>
+  </div>
 </div>
 """
 # Sem linhas em branco: no Markdown do Streamlit, uma linha em branco encerra o bloco HTML
@@ -322,6 +329,10 @@ def abrir_aviso(mensagem):
 
 
 # ====================================================================== corridas de exemplo
+# Os @st.fragment abaixo redesenham só a própria parte da tela. Assim, mexer em um campo não refaz a
+# página inteira. Um botão que muda a corrida usa `if st.button(...): st.rerun()`: o on_click atualiza
+# o estado e o st.rerun redesenha a página toda.
+@st.fragment
 def seletor_exemplo(local):
     """Campo para abrir uma corrida pronta. `local` separa a tela inicial da corrida aberta."""
     chave = f"exemplo_{local}"
@@ -329,8 +340,37 @@ def seletor_exemplo(local):
     with c1:
         st.selectbox("Corrida de exemplo", list(EXEMPLO_POR_NOME), key=chave)
     with c2:
-        st.button("Carregar exemplo", key=f"carregar_{local}", on_click=carregar_exemplo, args=(chave,),
-                  width="stretch")
+        if st.button("Carregar exemplo", key=f"carregar_{local}", on_click=carregar_exemplo, args=(chave,),
+                     width="stretch"):
+            st.rerun()
+
+
+# ====================================================================== inserir camada
+@st.fragment
+def painel_camada(tem_camadas):
+    """Material, peso e botões. Trocar o material ou o peso redesenha só este painel."""
+    st.selectbox("Material", list(MATS.index), key="material",
+                 format_func=lambda c: f"{c} – {MATS.loc[c, 'descricao'].title()} ({MATS.loc[c, 'classe'].lower()})")
+    cod = ss.material
+    m = MATS.loc[cod]
+    st.markdown(
+        f'<div class="mat-info">{desenho.amostra_material(cod, 30)}<div><b>{cod}</b> · {m["classe"]} · '
+        f'densidade {desenho._fmt(m["densidade"], 2)} t/m³<br>camada típica: {desenho._fmt(m["peso_p10_t"])} a '
+        f'{desenho._fmt(m["peso_p90_t"])} t · aparece em {m["pct_cestoes"]:.0%} dos cestões</div></div>',
+        unsafe_allow_html=True)
+    st.number_input("Peso da camada (t)", min_value=motor.PESO_MIN_CAMADA_T, max_value=motor.PESO_MAX_CAMADA_T,
+                    value=float(round(m["peso_tipico_t"], 1)), step=0.1, format="%.1f", key=f"peso_{cod}",
+                    help="Abaixo de 2 t a EVCOMX considera que o gancho não pegou o material.")
+    if st.button(f"⬇️  Inserir no cestão {ss.ativo}", type="primary", on_click=inserir_camada, width="stretch"):
+        st.rerun()
+    a2, a3 = st.columns(2)
+    with a2:
+        if st.button("↩️  Desfazer", on_click=desfazer_camada, disabled=not tem_camadas,
+                     help="Tira a última camada do cestão selecionado.", width="stretch"):
+            st.rerun()
+    with a3:
+        if st.button("🧹  Esvaziar", on_click=esvaziar_cestao, disabled=not tem_camadas, width="stretch"):
+            st.rerun()
 
 
 # ====================================================================== recombinação
@@ -446,11 +486,11 @@ if ss.exemplo_ativo:
 pronta = n_cestoes > 0 and all(len(c) > 0 for c in cestoes)
 receita = tuple(tuple((c["codigo"], c["peso_t"]) for c in cam) for cam in cestoes)
 momento_forno = ss.momento_forno
-resultado_c1 = RESULTADO_C1[ss.resultado_c1] if n_cestoes >= 2 else None
+resultado_c1 = None  # o app não pergunta o resultado do cestão 1: o cestão 2 usa sempre o modelo reserva
 previsao = (prever(receita, corrida["gusa_t"], modo, momento_forno, resultado_c1)
             if corrida["enviada"] and pronta else None)
 
-# ---------- desenho (esquerda) + inserir camada e painel (direita) ----------
+# ---------- desenho e números dos cestões (esquerda) + inserir camada, momento e envio (direita) ----------
 camadas_obj = [[motor.Camada(**c) for c in cam] for cam in cestoes]
 col_cena, col_lado = st.columns([1.55, 1], gap="large")
 
@@ -460,47 +500,14 @@ with col_cena:
     n_mat = len({c["codigo"] for cam in cestoes for c in cam})
     components.html(html_cena, height=560 + 30 * math.ceil(n_mat / 3), scrolling=False)
 
-with col_lado:
-    st.subheader("Inserir camada", anchor=False)
-    if n_cestoes == 0:
-        st.info("Clique em **Novo cestão** para pendurar o primeiro cestão.")
-    else:
-        if n_cestoes > 1:
-            chave_radio = f"radio_ativo_{n_cestoes}_{ss.ativo}"
-            st.radio("Cestão que recebe a camada", list(range(1, n_cestoes + 1)), index=ss.ativo - 1,
-                     format_func=lambda i: f"Cestão {i}", horizontal=True, key=chave_radio,
-                     on_change=trocar_ativo, args=(chave_radio,))
-        else:
-            st.caption("Camadas vão para o **cestão 1**.")
-        st.selectbox("Material", list(MATS.index), key="material",
-                     format_func=lambda c: f"{c} – {MATS.loc[c, 'descricao'].title()} ({MATS.loc[c, 'classe'].lower()})")
-        cod = ss.material
-        m = MATS.loc[cod]
-        st.markdown(
-            f'<div class="mat-info">{desenho.amostra_material(cod, 30)}<div><b>{cod}</b> · {m["classe"]} · '
-            f'densidade {desenho._fmt(m["densidade"], 2)} t/m³<br>camada típica: {desenho._fmt(m["peso_p10_t"])} a '
-            f'{desenho._fmt(m["peso_p90_t"])} t · aparece em {m["pct_cestoes"]:.0%} dos cestões</div></div>',
-            unsafe_allow_html=True)
-        st.number_input("Peso da camada (t)", min_value=motor.PESO_MIN_CAMADA_T, max_value=motor.PESO_MAX_CAMADA_T,
-                        value=float(round(m["peso_tipico_t"], 1)), step=0.1, format="%.1f", key=f"peso_{cod}",
-                        help="Abaixo de 2 t a EVCOMX considera que o gancho não pegou o material.")
-        st.button(f"⬇️  Inserir no cestão {ss.ativo}", type="primary", on_click=inserir_camada,
-                  width="stretch")
-        a2, a3 = st.columns(2)
-        with a2:
-            st.button("↩️  Desfazer", on_click=desfazer_camada, disabled=not cestoes[ss.ativo - 1],
-                      help="Tira a última camada do cestão selecionado.", width="stretch")
-        with a3:
-            st.button("🧹  Esvaziar", on_click=esvaziar_cestao, disabled=not cestoes[ss.ativo - 1],
-                      width="stretch")
-
+    # Fica embaixo do desenho: os números de cada cestão ao lado do cestão que eles descrevem.
     st.subheader("Como estão os cestões", anchor=False)
     if n_cestoes == 0:
         st.caption("Nenhum cestão ainda.")
     ref = CFG["referencia"]
-    for i, cam in enumerate(camadas_obj, start=1):
+    for coluna, i, cam in zip(st.columns(max(n_cestoes, 1)), range(1, n_cestoes + 1), camadas_obj):
         r = motor.resumo_cestao(cam, MATS)
-        with st.container(border=True):
+        with coluna.container(border=True):
             st.markdown(f"**Cestão {i}** · {r['n_camadas']} camadas · {r['n_ciclos']} ciclos")
             if not cam:
                 st.caption("Vazio.")
@@ -517,17 +524,27 @@ with col_lado:
                       help=f"do peso. Metade dos cestões fica entre {ref['prop_peso_pesado']['p25']:.0%} e "
                            f"{ref['prop_peso_pesado']['p75']:.0%}")
 
-    # ---------- momento do forno e resultado do cestão 1 ----------
+with col_lado:
+    st.subheader("Inserir camada", anchor=False)
+    if n_cestoes == 0:
+        st.info("Clique em **Novo cestão** para pendurar o primeiro cestão.")
+    else:
+        if n_cestoes > 1:
+            chave_radio = f"radio_ativo_{n_cestoes}_{ss.ativo}"
+            st.radio("Cestão que recebe a camada", list(range(1, n_cestoes + 1)), index=ss.ativo - 1,
+                     format_func=lambda i: f"Cestão {i}", horizontal=True, key=chave_radio,
+                     on_change=trocar_ativo, args=(chave_radio,))
+        else:
+            st.caption("Camadas vão para o **cestão 1**.")
+        painel_camada(bool(cestoes[ss.ativo - 1]))
+
+    # ---------- momento do forno ----------
     st.subheader("Momento da corrida", anchor=False)
     st.radio("Momento do forno", MOMENTOS_FORNO, key="momento_forno", horizontal=True, on_change=mudou_controle,
              format_func=lambda m: NOME_MOMENTO.get(m, m),
              help="Histórico, ritmo e horário de uma corrida real. As corridas simuladas aqui não entram nele.")
     mom_atual = motor.resumo_momento(_momento(ss.momento_forno))
     st.caption(f"Nas 10 corridas anteriores: {mom_atual['ult10'] * 10:.0f} com carga alta.")
-    if n_cestoes >= 2:
-        st.radio("Resultado do cestão 1", list(RESULTADO_C1), key="resultado_c1", horizontal=True,
-                 on_change=mudou_controle,
-                 help="Se o resultado é conhecido, o cestão 2 usa o modelo oficial. Senão, usa o modelo reserva.")
 
     # ---------- enviar ----------
     motivo = None
@@ -625,7 +642,7 @@ with st.expander("Receita em tabela"):
     else:
         st.caption("Nenhuma camada ainda.")
 
-st.markdown('<div class="rodape">Modelo: média de 5 Gradient Boosting</div>', unsafe_allow_html=True)
+st.markdown('<div class="rodape"><b>Arcanum</b> · Modelo: média de 5 Gradient Boosting</div>', unsafe_allow_html=True)
 
 # ---------- aviso central (por último, com a página já desenhada atrás) ----------
 if ss.erro:

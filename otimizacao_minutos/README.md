@@ -1,15 +1,6 @@
 ## Otimização por minutos perdidos: registro de onde veio o modelo oficial (out/2026)
 
-> **Esta pasta é o registro da exploração, não o caminho oficial.** O modelo que nasceu aqui (média de 5 Gradient Boosting com 120 features + o resultado do cestão 1) virou o **modelo oficial do projeto** e foi distribuído pelas pastas de cada aula:
->
-> | O que era daqui | Onde está agora |
-> |---|---|
-> | `features_minutos.py`, `dataset_minutos.csv`, `features_finais.json` | `feature_selection/` (seção 4 do script; `dataset_modelagem_fs.csv`, `dataset_features_completo.csv`, `features_finais.json`) |
-> | `modelo_minutos.py` (walk-forward, finalistas, teste, modelo para uso) | `selecao_algoritmos/` (`modelo_final.joblib`, `resultado_teste.csv`) |
-> | bootstrap do teste, gráfico de minutos | `analise_modelos/` (`bootstrap_teste.csv`) e `selecao_algoritmos/graficos/04_teste_minutos_e_matriz.png` |
-> | protocolo (minutos, limiar, walk-forward, receita dos 5 HGB) | `comum/protocolo.py`, usado por todas as etapas |
->
-> Os números saem **idênticos** nos dois lugares: o dataset novo é o mesmo, coluna a coluna, e a seleção confere que o modelo re-treinado dá as mesmas chances e os mesmos limiares.
+> **Esta pasta é o registro da exploração, não o caminho oficial.** O modelo que nasceu aqui (média de 5 Gradient Boosting com 120 features + o resultado do cestão 1) virou o **modelo oficial do projeto** e foi distribuído pelas pastas de cada aula. Os scripts dos experimentos saíram da pasta e estão no histórico do Git (commit `f849472`).
 
 Aqui ficam três coisas que não cabem numa aula: **como o modelo foi encontrado** (168 configurações), **a prova de que o teste foi aberto uma vez só**, para finalistas declarados antes, e **os cenários operacionais** (o que mudaria se a operação mudasse).
 
@@ -24,7 +15,7 @@ Depois da interpretação da Random Forest, a EVCOMX deixou claro o critério de
 3. **Os finalistas foram registrados antes de abrir o teste**, em `finalistas_dev_pre_registro.csv`. Critério declarado: menos minutos no dev, com PR-AUC no walk-forward pelo menos igual à da RF do grupo.
 4. **O teste (24/jun a 4/ago/26) foi aberto uma única vez** (`resultado_teste_final.csv`, `bootstrap_teste_final.csv`). Transparência: o grupo já tinha visto esse teste nas rodadas da RF; por isso nada foi escolhido olhando para ele.
 
-### O que foi tentado (168 configurações em `experimentos/experimentos_log.csv`)
+### O que foi tentado (168 configurações em `experimentos_log.csv`)
 
 | Ideia | Ajudou? |
 |---|---|
@@ -61,14 +52,11 @@ O modelo fica igual. A pergunta é que mudança barata na regra de negócio redu
 - **Cenário 2, depois de uma carga alta, montar a corrida seguinte mais densa** (`cenario2_regra_pos_carga_alta.csv`): depois de uma carga alta, a seguinte dá carga alta 54% das vezes, contra 19%, e hoje o pátio não reage. Uma densidade mínima de 0,85 t/m³ depois de uma carga alta evitaria 26–33% das paradas, mas desde maio quase não há corridas tão densas e a sucata pesada custa mais. A regra se paga se (preço do pesado − preço do leve) por tonelada < ~0,18–0,22 × o valor de 1 minuto de forno.
 - **Cenário 3, teto de alarmes por dia** (`cenario3_teto_alarmes.csv`): a média é ~2,5 alarmes por dia; um teto de 4 por dia já perde 11 pontos de economia.
 
-O script de cenários agora lê o dataset e as features de `feature_selection/` (os mesmos de antes).
-
 ### Arquivos
 
 | Arquivo | O que é |
 |---|---|
 | `finalistas_dev_pre_registro.csv` | **Números do dev salvos antes de abrir o teste** (a prova do protocolo) |
 | `resultado_teste_final.csv`, `bootstrap_teste_final.csv` | O teste, aberto uma vez, e a incerteza (bootstrap por dia) |
-| `graficos/01_minutos_perdidos_teste.png` | O gráfico daquela abertura |
-| `experimentos/` | Os scripts da exploração e o log das 168 configurações. Inclui `modelo_minutos.py` e `features_minutos.py`, os scripts que abriram o teste. São registro: esperam estar numa pasta `exp/` na raiz e não precisam ser rodados |
+| `experimentos_log.csv` | O log das 168 configurações testadas |
 | `cenarios_operacionais.py`, `cenario*.csv` | Os três cenários operacionais |

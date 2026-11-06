@@ -240,7 +240,6 @@ def desenhar_corrida(cestoes: list[list[dict]], materiais: pd.DataFrame, ativo: 
 
     return f"""<!doctype html><html><head><meta charset="utf-8">{LINK_FONTE}
 <style>
-  {FONT_FACE}
   html,body{{margin:0;background:transparent;font-family:{FONTE};}}
   .quadro{{background:{BRANCO};border:1px solid {CINZA_LINHA};border-radius:16px;padding:6px 8px 10px}}
   svg.cena{{width:100%;height:auto;display:block}}
@@ -366,6 +365,34 @@ def _faixa_feature(nome: str, ref: dict, valores: list[tuple[int, float, str]]) 
 </div>"""
 
 
+def _chance_corrida_html(c: dict) -> str:
+    """Cartão com a chance da corrida e o (?) que mostra a conta ao passar o mouse."""
+    if c["caso"] == "um_cestao":
+        conta = f"P(corrida) = P₁ = {c['p1']:.0%}"
+        texto = "Com um cestão só, a chance da corrida é a chance dele."
+    elif c["caso"] == "c1_deu":
+        conta = "P(corrida) = 100%"
+        texto = "O cestão 1 já deu carga alta, então a corrida já deu."
+    elif c["caso"] == "c1_nao_deu":
+        conta = f"P(corrida) = P₂ = {c['p2']:.0%}"
+        texto = "O cestão 1 não deu carga alta, então só falta o risco do cestão 2."
+    else:
+        conta = (f"P(corrida) = 1 − (1 − P₁) × (1 − P₂)<br>"
+                 f"= 1 − (1 − {c['p1']:.0%}) × (1 − {c['p2']:.0%}) = {c['chance']:.0%}")
+        texto = ("A corrida só escapa se nenhum cestão der carga alta. P₁ é a chance do cestão 1. P₂ é a chance do "
+                 "cestão 2 se o cestão 1 não der, por isso pode diferir da barra do cestão 2.")
+    return f"""<div class="corrida">
+ <div class="c-rot">Chance de carga alta na corrida
+  <span class="ajuda" tabindex="0" role="button" aria-label="Como este número é calculado" aria-describedby="conta">?
+   <span class="dica" id="conta" role="tooltip"><b class="conta">{conta}</b>{texto}
+   <em>O alarme não usa este número: ele vem do limiar de minutos de cada cestão, e pode disparar abaixo de 50%
+   porque um alarme falso custa menos que a parada.</em></span>
+  </span>
+ </div>
+ <div class="c-num">{c['chance']:.0%}</div>
+</div>"""
+
+
 def painel_resultado_html(prev: dict, modo: str, referencia: dict, parada_media: float) -> tuple[str, int]:
     """HTML do resultado e a altura sugerida do iframe."""
     from motor import ler_feature  # import local para desenho.py não depender do modelo
@@ -388,10 +415,9 @@ def painel_resultado_html(prev: dict, modo: str, referencia: dict, parada_media:
         valores = [(r["cestao"], r["x"][nome], ler_feature(nome, r["x"][nome], referencia)) for r in prev["cestoes"]]
         feats.append(_faixa_feature(nome, referencia[nome], valores))
 
-    altura = 160 + len(prev["cestoes"]) * 95 + 70 + 4 * 78 + 40
+    altura = 160 + 96 + len(prev["cestoes"]) * 95 + 70 + 4 * 78 + 40
     html_out = f"""<!doctype html><html><head><meta charset="utf-8">{LINK_FONTE}
 <style>
- {FONT_FACE}
  body{{margin:0;font-family:{FONTE};color:{PRETO};background:transparent}}
  svg text{{font-family:{FONTE}}}
  .veredito{{border-radius:16px;padding:18px 22px;display:flex;gap:16px;align-items:center;color:{BRANCO};animation:entra .5s ease-out both}}
@@ -400,6 +426,18 @@ def painel_resultado_html(prev: dict, modo: str, referencia: dict, parada_media:
  .veredito .ic{{font-size:30px;font-weight:800;width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;flex:none}}
  .veredito h2{{margin:0;font-size:23px;font-weight:700;letter-spacing:.3px}} .veredito p{{margin:5px 0 0;font-size:14px}}
  @keyframes entra{{from{{opacity:0;transform:translateY(-8px)}}to{{opacity:1;transform:none}}}}
+ .corrida{{position:relative;display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:12px;padding:12px 22px;
+   border:2px solid {PRETO};border-radius:16px}}
+ .c-rot{{font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px}}
+ .c-num{{font-size:34px;font-weight:800;line-height:1}}
+ .ajuda{{width:20px;height:20px;border-radius:50%;background:{PRETO};color:{BRANCO};font-size:13px;
+   font-weight:700;display:inline-flex;align-items:center;justify-content:center;cursor:help;flex:none}}
+ .ajuda:focus-visible{{outline:2px solid {LARANJA};outline-offset:2px}}
+ .dica{{display:none;position:absolute;top:calc(100% + 6px);left:16px;right:16px;max-width:420px;z-index:5;box-sizing:border-box;padding:14px 16px;
+   background:{PRETO};color:{BRANCO};border-radius:10px;font-size:13px;font-weight:500;line-height:1.45;cursor:default}}
+ .ajuda:hover .dica,.ajuda:focus .dica{{display:block}}
+ .dica .conta{{display:block;color:{LARANJA};font-size:14px;margin-bottom:8px}}
+ .dica em{{display:block;font-style:normal;color:#CFCFCF;margin-top:8px}}
  h3{{font-size:16px;color:{PRETO};margin:22px 0 8px;font-weight:700;letter-spacing:.3px}}
  h3 span{{font-weight:500;color:{CINZA};font-size:12.5px;letter-spacing:0}}
  .linha-chance,.linha-feat{{display:grid;grid-template-columns:150px 1fr;gap:12px;align-items:start;padding:8px 0;border-bottom:1px solid {CINZA_CLARO}}}
@@ -415,6 +453,7 @@ def painel_resultado_html(prev: dict, modo: str, referencia: dict, parada_media:
  @media (prefers-reduced-motion: reduce){{*{{animation:none!important}}}}
 </style></head><body>
 <div class="{classe}"><div class="ic">{icone}</div><div><h2>{titulo}</h2><p>{sub}</p></div></div>
+{_chance_corrida_html(prev["corrida"])}
 <h3>CHANCE DE CARGA ALTA POR CESTÃO <span>· a corrida alarma se qualquer cestão passar do limiar de minutos</span></h3>
 {barras}
 <h3>ONDE A RECEITA FOGE DO NORMAL <span>· faixa clara = 80% dos cestões do treino, faixa escura = metade do meio, traço = mediana</span></h3>
